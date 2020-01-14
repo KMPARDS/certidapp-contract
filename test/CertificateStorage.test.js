@@ -32,61 +32,69 @@ describe('Ganache Setup', async() => {
   });
 });
 
-// /// @dev this is another test case collection
-// describe('Simple Storage Contract', () => {
-//
-//   /// @dev describe under another describe is a sub test case collection
-//   describe('Simple Storage Setup', async() => {
-//
-//     /// @dev this is first test case of this collection
-//     it('deploys Simple Storage contract from first account with initial storage: Hello World', async() => {
-//
-//       /// @dev you create a contract factory for deploying contract. Refer to ethers.js documentation at https://docs.ethers.io/ethers.js/html/
-//       const CertificateStorageContractFactory = new ethers.ContractFactory(
-//         certificateStorageJSON.abi,
-//         certificateStorageJSON.evm.bytecode.object,
-//         provider.getSigner(accounts[0])
-//       );
-//       certificateStorageInstance =  await CertificateStorageContractFactory.deploy('hello world');
-//
-//       assert.ok(certificateStorageInstance.address, 'conract address should be present');
-//     });
-//
-//     /// @dev this is second test case of this collection
-//     it('value should be set properly while deploying', async() => {
-//
-//       /// @dev you access the value at storage with ethers.js library of our custom contract method called getValue defined in contracts/CertificateStorage.sol
-//       const currentValue = await certificateStorageInstance.functions.getValue();
-//
-//       /// @dev then you compare it with your expectation value
-//       assert.equal(
-//         currentValue,
-//         'hello world',
-//         'value set while deploying must be visible when get'
-//       );
-//     });
-//   });
-//
-//   describe('Simple Storage Functionality', async() => {
-//
-//     /// @dev this is first test case of this collection
-//     it('should change storage value to a new value', async() => {
-//
-//       /// @dev you sign and submit a transaction to local blockchain (ganache) initialized on line 10.
-//       const tx = await certificateStorageInstance.functions.setValue('Zemse');
-//
-//       /// @dev you can wait for transaction to confirm
-//       await tx.wait();
-//
-//       /// @dev now get the value at storage
-//       const currentValue = await certificateStorageInstance.functions.getValue();
-//
-//       /// @dev then comparing with expectation value
-//       assert.equal(
-//         currentValue,
-//         'Zemse',
-//         'value set must be able to get'
-//       );
-//     });
-//   });
-// });
+/// @dev this is another test case collection
+describe('Certificate Storage Contract', () => {
+
+  /// @dev describe under another describe is a sub test case collection
+  describe('Certificate Storage Setup', async() => {
+
+    /// @dev this is first test case of this collection
+    it('deploys Certificate Storage contract from first account', async() => {
+
+      /// @dev you create a contract factory for deploying contract. Refer to ethers.js documentation at https://docs.ethers.io/ethers.js/html/
+      const CertificateStorageContractFactory = new ethers.ContractFactory(
+        certificateStorageJSON.abi,
+        certificateStorageJSON.evm.bytecode.object,
+        provider.getSigner(accounts[0])
+      );
+      certificateStorageInstance =  await CertificateStorageContractFactory.deploy();
+
+      assert.ok(certificateStorageInstance.address, 'conract address should be present');
+    });
+
+    // /// @dev this is second test case of this collection
+    // it('value should be set properly while deploying', async() => {
+    //
+    //   /// @dev you access the value at storage with ethers.js library of our custom contract method called getValue defined in contracts/CertificateStorage.sol
+    //   const currentValue = await certificateStorageInstance.functions.getValue();
+    //
+    //   /// @dev then you compare it with your expectation value
+    //   assert.equal(
+    //     currentValue,
+    //     'hello world',
+    //     'value set while deploying must be visible when get'
+    //   );
+    // });
+  });
+
+  describe('Certificate Storage Functionality', async() => {
+
+    /// @dev this is first test case of this collection
+    it('new certificate', async() => {
+
+      /// @dev you sign and submit a transaction to local blockchain (ganache) initialized on line 10.
+
+      const message = 'hello';
+      const messageBytes = ethers.utils.toUtf8Bytes(message);
+      const messageHex = ethers.utils.hexZeroPad(ethers.utils.hexlify(messageBytes), 32);
+      const messageHash = ethers.utils.keccak256(ethers.utils.arrayify(messageHex));
+      const messageHashBytes = ethers.utils.arrayify(messageHash);
+      const signer = provider.getSigner(accounts[0]);
+      const signature = await signer.signMessage(messageHashBytes);
+      const concat = ethers.utils.concat([messageHex, signature]);
+      const arg = ethers.utils.hexlify(concat);
+      const splitSig = ethers.utils.splitSignature(signature);
+      console.log({message,messageBytes,messageHex,messageHash,signature,splitSig, arg, signer:await signer.getAddress()});
+
+      const response = await certificateStorageInstance.functions.recoverAddress(messageHash, splitSig.v, splitSig.r, splitSig.s);
+      console.log({messageHash, response});
+
+      const tx = await certificateStorageInstance.functions.certify(arg);
+      console.log({txData: tx.data});
+      /// @dev you can wait for transaction to confirm
+      const receipt = await tx.wait();
+      console.log({logs: receipt.logs.map(log => log.data)})
+      //
+    });
+  });
+});

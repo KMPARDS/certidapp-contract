@@ -1,12 +1,10 @@
 pragma solidity 0.6.1;
-
-// import { ECVerify } from "./ECVerify.sol";
+pragma experimental ABIEncoderV2;
 
 contract CertificateStorage {
-  // using ECVerify for bytes32;
-
   struct Certificate {
     bytes32 name;
+    address certifiedBy;
   }
 
   struct CertifyingAuthority {
@@ -14,8 +12,8 @@ contract CertificateStorage {
     bool isAuthorised;
   }
 
-  mapping(bytes32 => Certificate) public certificate;
-  mapping(address => CertifyingAuthority) public certifyingAuthority;
+  mapping(bytes32 => Certificate) public certificates;
+  mapping(address => CertifyingAuthority) public certifyingAuthorities;
 
   address manager;
 
@@ -27,6 +25,9 @@ contract CertificateStorage {
   event Bytes32(
     bytes32 _bytes32
   );
+  event Bytes(
+    bytes _bytes
+  );
   event Bytes1(
     bytes1 _bytes1
   );
@@ -37,44 +38,30 @@ contract CertificateStorage {
     uint256 _uint256
   );
 
-  function certify(bytes memory _certificate) public returns (bool _success) {
-    // bytes32 _name;
-    //
-    // bytes32 _r;
-    // bytes32 _s;
-    // uint8 _v;
-    //
-    // assembly {
-    //   let _pointer := add(_certificate, 0x20)
-    //   _name := mload(_pointer)
-    //   _r := mload(add(_pointer, 32))
-    //   _s := mload(add(_pointer, 64))
-    //   _v := byte(0, mload(add(_pointer, 96)))
-    //   // _v := and(mload(add(_pointer, 65)), 255)
-    // }
-    //
-    // if(_v < 27) _v += 27;
+  function certify(bytes memory _signedCertificate) public returns (bool _success) {
+    (Certificate memory _certificateObj, address _signer) = getCertificateAndSignerAddress(_signedCertificate);
+
+    bytes32 _certificateHash = keccak256(abi.encodePacked(_signedCertificate));
+
+    emit Address(_signer);
+    emit Bytes32(_certificateHash);
     //
     // require(
-    //   _v == 27 || _v == 28
-    //   , 'invalid recovery value'
+    //   certifyingAuthority[_signer].isAuthorised
+    //   , 'not authorised'
     // );
     //
-    // bytes32 _certificateHash = keccak256(abi.encodePacked(_name));
-    // address _signer = recoverAddress(_certificateHash, _v, _r, _s);
+    // require(
+    //   certificates[_certificateHash].certifiedBy == address(0)
+    //   , 'certificate registered already'
+    // );
 
-    address _signer = recoverAddress(_certificate);
 
-    // emit Bytes32(_certificateHash);
-    // emit Uint8(_v);
-    // emit Bytes32(_r);
-    // emit Bytes32(_s);
-    emit Address(_signer);
   }
 
-  function recoverAddress(
+  function getCertificateAndSignerAddress(
     bytes memory _certificate
-  ) public pure returns (address) {
+  ) public pure returns (Certificate memory, address) {
     bytes32 _name;
 
     bytes32 _r;
@@ -97,8 +84,20 @@ contract CertificateStorage {
       , 'invalid recovery value'
     );
 
-    // bytes32 _certificateHash = keccak256(abi.encodePacked(_name));
-    bytes32 _messageDigest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _name));
-    return ecrecover(_messageDigest, _v, _r, _s);
+    bytes32 _certificateHash = keccak256(abi.encodePacked(_name));
+    bytes32 _messageDigest = keccak256(
+      abi.encodePacked("\x19Ethereum Signed Message:\n32", _certificateHash)
+    );
+
+    address _signer = ecrecover(_messageDigest, _v, _r, _s);
+    Certificate memory _certificateObj = Certificate({
+      name: _name,
+      certifiedBy: _signer
+    });
+
+    return (
+      _certificateObj,
+      _signer
+    );
   }
 }

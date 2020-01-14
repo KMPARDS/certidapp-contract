@@ -79,9 +79,18 @@ describe('Certificate Storage Contract', () => {
   });
 
   describe('Certificate Storage Functionality', async() => {
+    it('new certifying authority', async() => {
+      const name = 'Blocklogy';
+      const nameBytes = ethers.utils.toUtf8Bytes(name);
+
+      await parseTx(certificateStorageInstance.functions.addCertifyingAuthority(
+        accounts[1],
+        nameBytes
+      ));
+    });
 
     /// @dev this is first test case of this collection
-    it('new certificate', async() => {
+    it('new certificate signed by account 1 submitted by account 2', async() => {
 
       /// @dev you sign and submit a transaction to local blockchain (ganache) initialized on line 10.
 
@@ -100,7 +109,7 @@ describe('Certificate Storage Contract', () => {
       // const response = await certificateStorageInstance.functions.getCertificateSignerAddress(arg);
       // console.log({messageHash, response});
 
-      await parseTx(certificateStorageInstance.functions.certify(arg))
+      await parseTx(certificateStorageInstance.functions.registerCertificate(arg))
 
       // const tx = await certificateStorageInstance.functions.testWorkaround();
       // console.log({txData: tx.data});

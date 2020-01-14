@@ -4,6 +4,7 @@ pragma experimental ABIEncoderV2;
 contract CertificateStorage {
   struct Certificate {
     bytes32 name;
+    bytes32 certifiedAs;
     address certifiedBy;
   }
 
@@ -15,54 +16,86 @@ contract CertificateStorage {
   mapping(bytes32 => Certificate) public certificates;
   mapping(address => CertifyingAuthority) public certifyingAuthorities;
 
-  address manager;
-
-  bytes prefix = "\x19Ethereum Signed Message:\n32";
+  address public deployer;
 
   event Address(
     address _signer
   );
+
   event Bytes32(
     bytes32 _bytes32
   );
-  event Bytes(
-    bytes _bytes
-  );
-  event Bytes1(
-    bytes1 _bytes1
-  );
-  event Uint8(
-    uint8 _uint8
-  );
-  event Uint256(
-    uint256 _uint256
+
+  event CertificateRegistered(
+    bytes32 indexed _name,
+    bytes32 indexed _certifiedAs,
+    address indexed _certifiedBy,
+    bytes32 _certificateHash
   );
 
-  function certify(bytes memory _signedCertificate) public returns (bool _success) {
-    (Certificate memory _certificateObj, address _signer) = getCertificateAndSignerAddress(_signedCertificate);
+  modifier onlyDeployer() {
+    require(msg.sender == deployer, 'only deployer can call');
+    _;
+  }
 
+  function addCertifyingAuthority(address _authorityAddress, bytes32 _name) public onlyDeployer {
+    certifyingAuthorities[_authorityAddress] = CertifyingAuthority({
+      name: _name,
+      isAuthorised: true
+    });
+  }
+
+  function updateCertifyingAuthorityAuthorization(
+    address _authorityAddress,
+    bool _newStatus
+  ) public onlyDeployer {
+    certifyingAuthorities[_authorityAddress].isAuthorised = _newStatus;
+  }
+
+  function updateCertifyingAuthority(
+    bytes32 _name
+  ) public {
+    require(
+      certifyingAuthorities[msg.sender].isAuthorised
+      , 'not authorised'
+    );
+    certifyingAuthorities[msg.sender].name = _name;
+  }
+
+  function registerCertificate(bytes memory _signedCertificate) public returns (bool _success) {
+    Certificate memory _certificateObj = getCertificateAndSignerAddress(_signedCertificate);
+
+    address _signer = _certificateObj.certifiedBy;
     bytes32 _certificateHash = keccak256(abi.encodePacked(_signedCertificate));
 
     emit Address(_signer);
     emit Bytes32(_certificateHash);
-    //
-    // require(
-    //   certifyingAuthority[_signer].isAuthorised
-    //   , 'not authorised'
-    // );
-    //
-    // require(
-    //   certificates[_certificateHash].certifiedBy == address(0)
-    //   , 'certificate registered already'
-    // );
 
+    require(
+      certifyingAuthorities[_signer].isAuthorised
+      , 'certifier not authorised'
+    );
 
+    require(
+      certificates[_certificateHash].certifiedBy == address(0)
+      , 'certificate registered already'
+    );
+
+    certificates[_certificateHash] = _certificateObj;
+
+    emit CertificateRegistered(
+      _certificateObj.name,
+      _certificateObj.certifiedAs,
+      _certificateObj.certifiedBy,
+      _certificateHash
+    );
   }
 
   function getCertificateAndSignerAddress(
     bytes memory _certificate
-  ) public pure returns (Certificate memory, address) {
+  ) public pure returns (Certificate memory) {
     bytes32 _name;
+    bytes32 _certifiedAs;
 
     bytes32 _r;
     bytes32 _s;
@@ -71,9 +104,10 @@ contract CertificateStorage {
     assembly {
       let _pointer := add(_certificate, 0x20)
       _name := mload(_pointer)
-      _r := mload(add(_pointer, 32))
-      _s := mload(add(_pointer, 64))
-      _v := byte(0, mload(add(_pointer, 96)))
+      _certifiedAs := mload(add(_pointer, 32))
+      _r := mload(add(_pointer, 64))
+      _s := mload(add(_pointer, 96))
+      _v := byte(0, mload(add(_pointer, 128)))
       // _v := and(mload(add(_pointer, 65)), 255)
     }
 
@@ -92,12 +126,10 @@ contract CertificateStorage {
     address _signer = ecrecover(_messageDigest, _v, _r, _s);
     Certificate memory _certificateObj = Certificate({
       name: _name,
+      certifiedAs: _certifiedAs,
       certifiedBy: _signer
     });
 
-    return (
-      _certificateObj,
-      _signer
-    );
+    return _certificateObj;
   }
 }

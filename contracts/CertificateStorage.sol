@@ -1,6 +1,10 @@
 pragma solidity 0.6.1;
 
+// import { ECVerify } from "./ECVerify.sol";
+
 contract CertificateStorage {
+  // using ECVerify for bytes32;
+
   struct Certificate {
     bytes32 name;
   }
@@ -34,45 +38,67 @@ contract CertificateStorage {
   );
 
   function certify(bytes memory _certificate) public returns (bool _success) {
+    // bytes32 _name;
+    //
+    // bytes32 _r;
+    // bytes32 _s;
+    // uint8 _v;
+    //
+    // assembly {
+    //   let _pointer := add(_certificate, 0x20)
+    //   _name := mload(_pointer)
+    //   _r := mload(add(_pointer, 32))
+    //   _s := mload(add(_pointer, 64))
+    //   _v := byte(0, mload(add(_pointer, 96)))
+    //   // _v := and(mload(add(_pointer, 65)), 255)
+    // }
+    //
+    // if(_v < 27) _v += 27;
+    //
+    // require(
+    //   _v == 27 || _v == 28
+    //   , 'invalid recovery value'
+    // );
+    //
+    // bytes32 _certificateHash = keccak256(abi.encodePacked(_name));
+    // address _signer = recoverAddress(_certificateHash, _v, _r, _s);
+
+    address _signer = recoverAddress(_certificate);
+
+    // emit Bytes32(_certificateHash);
+    // emit Uint8(_v);
+    // emit Bytes32(_r);
+    // emit Bytes32(_s);
+    emit Address(_signer);
+  }
+
+  function recoverAddress(
+    bytes memory _certificate
+  ) public pure returns (address) {
     bytes32 _name;
-    bytes32 _sigR;
-    bytes32 _sigS;
-    bytes1 _sigV_;
-    uint256 _sigV;
+
+    bytes32 _r;
+    bytes32 _s;
+    uint8 _v;
 
     assembly {
       let _pointer := add(_certificate, 0x20)
       _name := mload(_pointer)
-      _sigR := mload(add(_pointer, 32))
-      _sigS := mload(add(_pointer, 64))
-      _sigV_ := mload(add(_pointer, 96))
-      _sigV := _sigV_
-      if lt(_sigV, 27) { _sigV := add(_sigV, 27) }
+      _r := mload(add(_pointer, 32))
+      _s := mload(add(_pointer, 64))
+      _v := byte(0, mload(add(_pointer, 96)))
+      // _v := and(mload(add(_pointer, 65)), 255)
     }
-    // if(_sigV < 27) _sigV += 27;
 
+    if(_v < 27) _v += 27;
 
-    // _sigV = bytes1(uint8(_sigV) + 27);
+    require(
+      _v == 27 || _v == 28
+      , 'invalid recovery value'
+    );
 
-    bytes32 _certificateHash = keccak256(abi.encodePacked(_name));
-    // address _signer = ecrecover(_certificateHash, uint8(28), _sigR, _sigS);
-    address _signer = recoverAddress(_certificateHash, uint8(_sigV), _sigR, _sigS);
-
-    emit Address(_signer);
-    emit Bytes32(_certificateHash);
-    emit Bytes32(_sigR);
-    emit Bytes32(_sigS);
-    emit Bytes1(_sigV_);
-    emit Uint256(_sigV);
-  }
-
-  function recoverAddress(
-    bytes32 _hash,
-    uint8 _v,
-    bytes32 _r,
-    bytes32 _s
-  ) public pure returns (address) {
-    bytes32 _messageDigest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hash));
+    // bytes32 _certificateHash = keccak256(abi.encodePacked(_name));
+    bytes32 _messageDigest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _name));
     return ecrecover(_messageDigest, _v, _r, _s);
   }
 }

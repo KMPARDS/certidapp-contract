@@ -86,14 +86,21 @@ describe('Certificate Storage Contract', () => {
       const splitSig = ethers.utils.splitSignature(signature);
       console.log({message,messageBytes,messageHex,messageHash,signature,splitSig, arg, signer:await signer.getAddress()});
 
-      const response = await certificateStorageInstance.functions.recoverAddress(messageHash, splitSig.v, splitSig.r, splitSig.s);
-      console.log({messageHash, response});
+      // const response = await certificateStorageInstance.functions.recoverAddress(messageHash, splitSig.v, splitSig.r, splitSig.s);
+      // console.log({messageHash, response});
 
       const tx = await certificateStorageInstance.functions.certify(arg);
       console.log({txData: tx.data});
       /// @dev you can wait for transaction to confirm
       const receipt = await tx.wait();
-      console.log({logs: receipt.logs.map(log => log.data)})
+      console.log({logs: receipt.logs.map(log => log.data)});
+
+
+      // const tx = await certificateStorageInstance.functions.testWorkaround();
+      // console.log({txData: tx.data});
+      // /// @dev you can wait for transaction to confirm
+      // const receipt = await tx.wait();
+      // console.log({logs: receipt.logs.map(log => log.data)})
       //
     });
   });

@@ -1,7 +1,7 @@
 {
-  "name": "smart-solidity-template",
-  "version": "1.1.0",
-  "description": "Starter template for building smart contracts",
+  "name": "certificate-contract",
+  "version": "1.0.0",
+  "description": "Smart Contract based Certificate issuance and verification",
   "scripts": {
     "compile": "node compile.js",
     "test": "node compile.js && mocha --timeout 30000",
@@ -18,6 +18,6 @@
     "fs-extra": "8.1.0",
     "ganache-cli": "6.4.5",
     "mocha": "^6.1.4",
-    "solc": "^0.6.0"
+    "solc": "^0.6.1"
   }
 }

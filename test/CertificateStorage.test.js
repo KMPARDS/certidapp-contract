@@ -60,11 +60,11 @@ function encodeCertifiedAs(courseName, percentile=0) {
   return ethers.utils.hexlify(ethers.utils.concat([courseNameHex, percentileMul100Hex]));
 }
 
-function decodeCertifiedAs(certifiedAs) {
-  if(certifiedAs.slice(0,2) != '0x') throw new Error('hex string should start with 0x');
-  // certifiedAs = certifiedAs.slice(2);
-  const courseName = bytesToString(certifiedAs.slice(0,62));
-  const percentile = (+('0x'+certifiedAs.slice(62,66)))/100;
+function decodeCertifiedAs(certificationData) {
+  if(certificationData.slice(0,2) != '0x') throw new Error('hex string should start with 0x');
+  // certificationData = certificationData.slice(2);
+  const courseName = bytesToString(certificationData.slice(0,62));
+  const percentile = (+('0x'+certificationData.slice(62,66)))/100;
   return {courseName, percentile};
 }
 
@@ -124,9 +124,9 @@ describe('Certificate Storage Contract', () => {
     let signedCertificate;
     it('new certificate signed by account 1', async() => {
       const nameBytes32 = stringToBytes32(studentName);
-      const certifiedAsBytes32 = encodeCertifiedAs(courseName, percentile);
+      const certificationDataBytes32 = encodeCertifiedAs(courseName, percentile);
 
-      const unsignedCertificateConcat = ethers.utils.hexlify(ethers.utils.concat([nameBytes32, certifiedAsBytes32]));
+      const unsignedCertificateConcat = ethers.utils.hexlify(ethers.utils.concat([nameBytes32, certificationDataBytes32]));
       const unsignedCertificateHash = ethers.utils.keccak256(ethers.utils.arrayify(unsignedCertificateConcat));
       // console.log({unsignedCertificateConcat, unsignedCertificateHash});
 
@@ -135,7 +135,7 @@ describe('Certificate Storage Contract', () => {
       const signedCertificateConcat = ethers.utils.concat([unsignedCertificateConcat, signature]);
       const arg = ethers.utils.hexlify(signedCertificateConcat);
 
-      console.log({nameBytes32, certifiedAsBytes32, arg});
+      console.log({nameBytes32, certificationDataBytes32, arg});
 
       signedCertificate = arg;
 
@@ -152,7 +152,7 @@ describe('Certificate Storage Contract', () => {
       const certificate = await certificateStorageInstance.functions.certificates(certificateHash);
       // console.log(certificate);
 
-      const decodedCertifiedAs = decodeCertifiedAs(certificate.certifiedAs);
+      const decodedCertifiedAs = decodeCertifiedAs(certificate.certificationData);
       console.log(decodedCertifiedAs);
 
       assert.equal(bytesToString(certificate.name), studentName, 'student name should match on certificate');

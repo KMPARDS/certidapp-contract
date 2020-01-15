@@ -4,7 +4,7 @@ pragma experimental ABIEncoderV2;
 contract CertificateStorage {
   struct Certificate {
     bytes32 name;
-    bytes32 certifiedAs;
+    bytes32 certificationData;
     address certifiedBy;
   }
 
@@ -19,12 +19,11 @@ contract CertificateStorage {
   address public manager;
   bytes constant public PERSONAL_PREFIX = "\x19Ethereum Signed Message:\n64";
   uint256 constant SIGNED_CERTIFICATE_LENGTH = 129;
+  // uint256 constant SIGNED_CERTIFICATE_LENGTH = 129;
 
-  event CertificateRegistered(
-    bytes32 indexed _name,
-    bytes32 indexed _certifiedAs,
-    address indexed _certifiedBy,
-    bytes32 _certificateHash
+  event Certified(
+    bytes32 indexed _certificateHash,
+    address indexed _certifiedBy
   );
 
   modifier onlyManager() {
@@ -78,11 +77,9 @@ contract CertificateStorage {
 
     certificates[_certificateHash] = _certificateObj;
 
-    emit CertificateRegistered(
-      _certificateObj.name,
-      _certificateObj.certifiedAs,
-      _certificateObj.certifiedBy,
-      _certificateHash
+    emit Certified(
+      _certificateHash,
+      _certificateObj.certifiedBy
     );
   }
 
@@ -95,7 +92,7 @@ contract CertificateStorage {
     );
 
     bytes32 _name;
-    bytes32 _certifiedAs;
+    bytes32 _certificationData;
 
     bytes32 _r;
     bytes32 _s;
@@ -104,7 +101,7 @@ contract CertificateStorage {
     assembly {
       let _pointer := add(_signedCertificate, 0x20)
       _name := mload(_pointer)
-      _certifiedAs := mload(add(_pointer, 32))
+      _certificationData := mload(add(_pointer, 32))
       _r := mload(add(_pointer, 64))
       _s := mload(add(_pointer, 96))
       _v := byte(0, mload(add(_pointer, 128)))
@@ -118,13 +115,13 @@ contract CertificateStorage {
     );
 
     bytes32 _messageDigest = keccak256(
-      abi.encodePacked(PERSONAL_PREFIX, _name, _certifiedAs)
+      abi.encodePacked(PERSONAL_PREFIX, _name, _certificationData)
     );
 
     address _signer = ecrecover(_messageDigest, _v, _r, _s);
     Certificate memory _certificateObj = Certificate({
       name: _name,
-      certifiedAs: _certifiedAs,
+      certificationData: _certificationData,
       certifiedBy: _signer
     });
 

@@ -17,6 +17,7 @@ contract CertificateStorage {
   mapping(address => CertifyingAuthority) public certifyingAuthorities;
 
   address public deployer;
+  bytes public zemse;
 
   event Address(
     address _signer
@@ -24,6 +25,10 @@ contract CertificateStorage {
 
   event Bytes32(
     bytes32 _bytes32
+  );
+
+  event Bytes(
+    bytes _bytes
   );
 
   event CertificateRegistered(
@@ -75,15 +80,15 @@ contract CertificateStorage {
     emit Address(_signer);
     emit Bytes32(_certificateHash);
 
-    require(
-      certifyingAuthorities[_signer].isAuthorised
-      , 'certifier not authorised'
-    );
-
-    require(
-      certificates[_certificateHash].certifiedBy == address(0)
-      , 'certificate registered already'
-    );
+    // require(
+    //   certifyingAuthorities[_signer].isAuthorised
+    //   , 'certifier not authorised'
+    // );
+    //
+    // require(
+    //   certificates[_certificateHash].certifiedBy == address(0)
+    //   , 'certificate registered already'
+    // );
 
     certificates[_certificateHash] = _certificateObj;
 
@@ -97,7 +102,7 @@ contract CertificateStorage {
 
   function getCertificateAndSignerAddress(
     bytes memory _certificate
-  ) public pure returns (Certificate memory) {
+  ) public returns (Certificate memory) {
     bytes32 _name;
     bytes32 _certifiedAs;
 
@@ -122,10 +127,17 @@ contract CertificateStorage {
       , 'invalid recovery value'
     );
 
-    bytes32 _certificateHash = keccak256(abi.encodePacked(_name));
+    // bytes32 _certificateHash = keccak256(abi.encodePacked(_name, _certifiedAs));
     bytes32 _messageDigest = keccak256(
-      abi.encodePacked("\x19Ethereum Signed Message:\n32", _certificateHash)
+      abi.encodePacked("\x19Ethereum Signed Message:\n64", _name, _certifiedAs)
     );
+
+    zemse = abi.encodePacked("\x19Ethereum Signed Message:\n64", _name, _certifiedAs);
+
+    emit Bytes(abi.encodePacked("\x19Ethereum Signed Message:\n64", _name, _certifiedAs));
+    emit Bytes32(_name);
+    emit Bytes32(_certifiedAs);
+    emit Bytes32(_messageDigest);
 
     address _signer = ecrecover(_messageDigest, _v, _r, _s);
     Certificate memory _certificateObj = Certificate({

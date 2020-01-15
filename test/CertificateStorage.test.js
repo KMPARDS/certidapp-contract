@@ -20,7 +20,7 @@ let accounts, certificateStorageInstance;
 
 
 async function parseTx(tx) {
-  console.log(await tx);
+  // console.log(await tx);
   const r = await (await tx).wait();
   const gasUsed = r.gasUsed.toNumber();
   console.log(`Gas used: ${gasUsed} / ${ethers.utils.formatEther(r.gasUsed.mul(ethers.utils.parseUnits('1','gwei')))} ETH / ${gasUsed / 50000} ERC20 transfers`);
@@ -45,11 +45,13 @@ function bytes32ToString(bytes32) {
 
 function encodeCertifiedAs(courseName, percentile=0) {
   if(courseName.length >= 30) throw new Error('only 30 chars allowed as courseName');
-  const courseNameHex = bytes32ToString(courseName).slice(0,30);
+  const courseNameHex = stringToBytes32(courseName).slice(0,62);
 
   // 2 byte percentile can display upto 2 decimal accuracy
   const percentileMul100Hex = ethers.utils.hexlify(Math.floor(percentile*100));
   console.log({courseNameHex,percentileMul100Hex});
+
+  return ethers.utils.hexlify(ethers.utils.concat([courseNameHex, percentileMul100Hex]));
 }
 
 
@@ -128,22 +130,33 @@ describe('Certificate Storage Contract', () => {
       const certifiedAs = 'Blockchain Developer Level 1';
       const certifiedAsBytes32 = encodeCertifiedAs(certifiedAs, 78.36);
 
-      const unsignedCertificate = ethers.utils.concat([nameBytes32, signature]);
+      const unsignedCertificateConcat = ethers.utils.hexlify(ethers.utils.concat([nameBytes32, certifiedAsBytes32]));
+      const unsignedCertificateHash = ethers.utils.keccak256(ethers.utils.arrayify(unsignedCertificateConcat));
+      console.log({unsignedCertificateConcat, unsignedCertificateHash});
 
-      const nameHash = ethers.utils.keccak256(ethers.utils.arrayify(nameBytes32));
+      const x = ethers.utils.hexlify(ethers.utils.concat([ethers.utils.toUtf8Bytes('\x19Ethereum Signed Message:\n64'),nameBytes32,certifiedAsBytes32]));
+      // const x = '0x19457468657265756d205369676e6564204d6573736167653a0a3332536f68616d205a656d7365000000000000000000000000000000000000000000426c6f636b636861696e20446576656c6f706572204c6576656c203100001e9c';
+      console.log('ss', x, ethers.utils.keccak256(x));;
+      // ethers.utils.toUtf8Bytes(String(message.length))
 
       const signer = provider.getSigner(accounts[0]);
-      const signature = await signer.signMessage(ethers.utils.arrayify(nameHash));
-      const concat = ethers.utils.concat([nameBytes32, signature]);
-      const arg = ethers.utils.hexlify(concat);
+      const signature = await signer.signMessage(ethers.utils.arrayify(unsignedCertificateConcat));
+      const signedCertificateConcat = ethers.utils.concat([unsignedCertificateConcat, signature]);
+      const arg = ethers.utils.hexlify(signedCertificateConcat);
       const splitSig = ethers.utils.splitSignature(signature);
-      console.log({studentName, nameBytes32, nameHash, signer:await signer.getAddress(), signature, arg});
+
+      const certificateHash = ethers.utils.keccak256(arg);
+
+      console.log({signer:await signer.getAddress(), signature, arg, certificateHash});
 
       // const response = await certificateStorageInstance.functions.getCertificateSignerAddress(arg);
       // console.log({messageHash, response});
 
       await parseTx(certificateStorageInstance.functions.registerCertificate(arg))
 
+
+      const zemse = await certificateStorageInstance.functions.zemse();
+      console.log({zemse});
       // const tx = await certificateStorageInstance.functions.testWorkaround();
       // console.log({txData: tx.data});
       // /// @dev you can wait for transaction to confirm

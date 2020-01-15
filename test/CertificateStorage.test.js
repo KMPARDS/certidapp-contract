@@ -20,6 +20,7 @@ let accounts, certificateStorageInstance;
 
 
 async function parseTx(tx) {
+  console.log(await tx);
   const r = await (await tx).wait();
   const gasUsed = r.gasUsed.toNumber();
   console.log(`Gas used: ${gasUsed} / ${ethers.utils.formatEther(r.gasUsed.mul(ethers.utils.parseUnits('1','gwei')))} ETH / ${gasUsed / 50000} ERC20 transfers`);
@@ -28,6 +29,29 @@ async function parseTx(tx) {
   });
   return r;
 }
+
+function stringToBytes32(text) {
+  // text = text.slice(0,32);
+  if(text.length >= 32) throw new Error('only 32 chars allowed in bytes32');
+  var result = ethers.utils.hexlify(ethers.utils.toUtf8Bytes(text));
+  while (result.length < 66) { result += '0'; }
+  if (result.length !== 66) { throw new Error("invalid web3 implicit bytes32"); }
+  return result;
+}
+
+function bytes32ToString(bytes32) {
+  return ethers.utils.toUtf8String(bytes32).split('\u0000').join('');
+}
+
+function encodeCertifiedAs(courseName, percentile=0) {
+  if(courseName.length >= 30) throw new Error('only 30 chars allowed as courseName');
+  const courseNameHex = bytes32ToString(courseName).slice(0,30);
+
+  // 2 byte percentile can display upto 2 decimal accuracy
+  const percentileMul100Hex = ethers.utils.hexlify(Math.floor(percentile*100));
+  console.log({courseNameHex,percentileMul100Hex});
+}
+
 
 /// @dev this is a test case collection
 describe('Ganache Setup', async() => {
@@ -80,31 +104,40 @@ describe('Certificate Storage Contract', () => {
 
   describe('Certificate Storage Functionality', async() => {
     it('new certifying authority', async() => {
-      const name = 'Blocklogy';
-      const nameBytes = ethers.utils.toUtf8Bytes(name);
+      const certifierName = 'Blocklogy';
+      const nameBytes32 = stringToBytes32(certifierName);
 
       await parseTx(certificateStorageInstance.functions.addCertifyingAuthority(
         accounts[1],
-        nameBytes
+        nameBytes32
       ));
+
+      const certifyingAuthority = await certificateStorageInstance.functions.certifyingAuthorities(accounts[1]);
+
+      const formatedName = bytes32ToString(certifyingAuthority.name);
+      // console.log({formatedName, name});
+      assert.equal(formatedName, certifierName, 'name should be set properly');
+      assert.equal(certifyingAuthority.isAuthorised, true, 'authorisation should be true by default');
     });
 
-    /// @dev this is first test case of this collection
-    it('new certificate signed by account 1 submitted by account 2', async() => {
+    let signedCertificate;
+    it('new certificate signed by account 1', async() => {
+      const studentName = 'Soham Zemse';
+      const nameBytes32 = stringToBytes32(studentName);
 
-      /// @dev you sign and submit a transaction to local blockchain (ganache) initialized on line 10.
+      const certifiedAs = 'Blockchain Developer Level 1';
+      const certifiedAsBytes32 = encodeCertifiedAs(certifiedAs, 78.36);
 
-      const message = 'hello';
-      const messageBytes = ethers.utils.toUtf8Bytes(message);
-      const messageHex = ethers.utils.hexZeroPad(ethers.utils.hexlify(messageBytes), 32);
-      const messageHash = ethers.utils.keccak256(ethers.utils.arrayify(messageHex));
-      const messageHashBytes = ethers.utils.arrayify(messageHash);
+      const unsignedCertificate = ethers.utils.concat([nameBytes32, signature]);
+
+      const nameHash = ethers.utils.keccak256(ethers.utils.arrayify(nameBytes32));
+
       const signer = provider.getSigner(accounts[0]);
-      const signature = await signer.signMessage(messageHashBytes);
-      const concat = ethers.utils.concat([messageHex, signature]);
+      const signature = await signer.signMessage(ethers.utils.arrayify(nameHash));
+      const concat = ethers.utils.concat([nameBytes32, signature]);
       const arg = ethers.utils.hexlify(concat);
       const splitSig = ethers.utils.splitSignature(signature);
-      console.log({message,messageBytes,messageHex,messageHash,signature,splitSig, arg, signer:await signer.getAddress()});
+      console.log({studentName, nameBytes32, nameHash, signer:await signer.getAddress(), signature, arg});
 
       // const response = await certificateStorageInstance.functions.getCertificateSignerAddress(arg);
       // console.log({messageHash, response});

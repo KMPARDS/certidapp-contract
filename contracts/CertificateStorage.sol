@@ -38,6 +38,10 @@ contract CertificateStorage {
     _;
   }
 
+  constructor() public {
+    deployer = msg.sender;
+  }
+
   function addCertifyingAuthority(address _authorityAddress, bytes32 _name) public onlyDeployer {
     certifyingAuthorities[_authorityAddress] = CertifyingAuthority({
       name: _name,

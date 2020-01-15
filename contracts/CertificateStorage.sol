@@ -5,7 +5,7 @@ contract CertificateStorage {
   struct Certificate {
     bytes32 name;
     bytes32 certificationData;
-    address certifiedBy;
+    address[] certifiedBy;
   }
 
   struct CertifyingAuthority {
@@ -62,7 +62,7 @@ contract CertificateStorage {
   function registerCertificate(bytes memory _signedCertificate) public {
     Certificate memory _certificateObj = parseSignedCertificate(_signedCertificate);
 
-    address _signer = _certificateObj.certifiedBy;
+    address _signer = _certificateObj.certifiedBy[0];
     bytes32 _certificateHash = keccak256(abi.encodePacked(_signedCertificate));
 
     require(
@@ -70,22 +70,22 @@ contract CertificateStorage {
       , 'certifier not authorised'
     );
 
-    require(
-      certificates[_certificateHash].certifiedBy == address(0)
-      , 'certificate registered already'
-    );
+    // require(
+    //   certificates[_certificateHash].certifiedBy[0] == address(0)
+    //   , 'certificate registered already'
+    // );
 
-    certificates[_certificateHash] = _certificateObj;
+    // certificates[_certificateHash] = _certificateObj;
 
     emit Certified(
       _certificateHash,
-      _certificateObj.certifiedBy
+      _certificateObj.certifiedBy[0]
     );
   }
 
   function parseSignedCertificate(
     bytes memory _signedCertificate
-  ) public pure returns (Certificate memory) {
+  ) public returns (Certificate memory) {
     require(
       _signedCertificate.length == SIGNED_CERTIFICATE_LENGTH
       , 'invalid certificate length'
@@ -119,12 +119,21 @@ contract CertificateStorage {
     );
 
     address _signer = ecrecover(_messageDigest, _v, _r, _s);
-    Certificate memory _certificateObj = Certificate({
-      name: _name,
-      certificationData: _certificationData,
-      certifiedBy: _signer
-    });
+    // Certificate memory _certificateObj;
+    //  = Certificate({
+    //   name: _name,
+    //   certificationData: _certificationData,
+    //   certifiedBy: new address[](1)
+    // });
 
-    return _certificateObj;
+    bytes32 _certificateHash = keccak256(abi.encodePacked(_signedCertificate));
+
+    certificates[_certificateHash].name = _name;
+    certificates[_certificateHash].certificationData = _certificationData;
+    certificates[_certificateHash].certifiedBy.push(_signer);
+
+    // _certificateObj.certifiedBy[0] = _signer;
+
+    return certificates[_certificateHash];
   }
 }

@@ -16,20 +16,9 @@ contract CertificateStorage {
   mapping(bytes32 => Certificate) public certificates;
   mapping(address => CertifyingAuthority) public certifyingAuthorities;
 
-  address public deployer;
-  bytes public zemse;
-
-  event Address(
-    address _signer
-  );
-
-  event Bytes32(
-    bytes32 _bytes32
-  );
-
-  event Bytes(
-    bytes _bytes
-  );
+  address public manager;
+  bytes constant public PERSONAL_PREFIX = "\x19Ethereum Signed Message:\n64";
+  uint256 constant SIGNED_CERTIFICATE_LENGTH = 129;
 
   event CertificateRegistered(
     bytes32 indexed _name,
@@ -38,16 +27,16 @@ contract CertificateStorage {
     bytes32 _certificateHash
   );
 
-  modifier onlyDeployer() {
-    require(msg.sender == deployer, 'only deployer can call');
+  modifier onlyManager() {
+    require(msg.sender == manager, 'only manager can call');
     _;
   }
 
   constructor() public {
-    deployer = msg.sender;
+    manager = msg.sender;
   }
 
-  function addCertifyingAuthority(address _authorityAddress, bytes32 _name) public onlyDeployer {
+  function addCertifyingAuthority(address _authorityAddress, bytes32 _name) public onlyManager {
     certifyingAuthorities[_authorityAddress] = CertifyingAuthority({
       name: _name,
       isAuthorised: true
@@ -57,7 +46,7 @@ contract CertificateStorage {
   function updateCertifyingAuthorityAuthorization(
     address _authorityAddress,
     bool _newStatus
-  ) public onlyDeployer {
+  ) public onlyManager {
     certifyingAuthorities[_authorityAddress].isAuthorised = _newStatus;
   }
 
@@ -71,24 +60,21 @@ contract CertificateStorage {
     certifyingAuthorities[msg.sender].name = _name;
   }
 
-  function registerCertificate(bytes memory _signedCertificate) public returns (bool _success) {
-    Certificate memory _certificateObj = getCertificateAndSignerAddress(_signedCertificate);
+  function registerCertificate(bytes memory _signedCertificate) public {
+    Certificate memory _certificateObj = parseSignedCertificate(_signedCertificate);
 
     address _signer = _certificateObj.certifiedBy;
     bytes32 _certificateHash = keccak256(abi.encodePacked(_signedCertificate));
 
-    emit Address(_signer);
-    emit Bytes32(_certificateHash);
+    require(
+      certifyingAuthorities[_signer].isAuthorised
+      , 'certifier not authorised'
+    );
 
-    // require(
-    //   certifyingAuthorities[_signer].isAuthorised
-    //   , 'certifier not authorised'
-    // );
-    //
-    // require(
-    //   certificates[_certificateHash].certifiedBy == address(0)
-    //   , 'certificate registered already'
-    // );
+    require(
+      certificates[_certificateHash].certifiedBy == address(0)
+      , 'certificate registered already'
+    );
 
     certificates[_certificateHash] = _certificateObj;
 
@@ -100,9 +86,14 @@ contract CertificateStorage {
     );
   }
 
-  function getCertificateAndSignerAddress(
-    bytes memory _certificate
-  ) public returns (Certificate memory) {
+  function parseSignedCertificate(
+    bytes memory _signedCertificate
+  ) public pure returns (Certificate memory) {
+    require(
+      _signedCertificate.length == SIGNED_CERTIFICATE_LENGTH
+      , 'invalid certificate length'
+    );
+
     bytes32 _name;
     bytes32 _certifiedAs;
 
@@ -111,13 +102,12 @@ contract CertificateStorage {
     uint8 _v;
 
     assembly {
-      let _pointer := add(_certificate, 0x20)
+      let _pointer := add(_signedCertificate, 0x20)
       _name := mload(_pointer)
       _certifiedAs := mload(add(_pointer, 32))
       _r := mload(add(_pointer, 64))
       _s := mload(add(_pointer, 96))
       _v := byte(0, mload(add(_pointer, 128)))
-      // _v := and(mload(add(_pointer, 65)), 255)
     }
 
     if(_v < 27) _v += 27;
@@ -127,17 +117,9 @@ contract CertificateStorage {
       , 'invalid recovery value'
     );
 
-    // bytes32 _certificateHash = keccak256(abi.encodePacked(_name, _certifiedAs));
     bytes32 _messageDigest = keccak256(
-      abi.encodePacked("\x19Ethereum Signed Message:\n64", _name, _certifiedAs)
+      abi.encodePacked(PERSONAL_PREFIX, _name, _certifiedAs)
     );
-
-    zemse = abi.encodePacked("\x19Ethereum Signed Message:\n64", _name, _certifiedAs);
-
-    emit Bytes(abi.encodePacked("\x19Ethereum Signed Message:\n64", _name, _certifiedAs));
-    emit Bytes32(_name);
-    emit Bytes32(_certifiedAs);
-    emit Bytes32(_messageDigest);
 
     address _signer = ecrecover(_messageDigest, _v, _r, _s);
     Certificate memory _certificateObj = Certificate({

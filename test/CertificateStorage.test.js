@@ -20,7 +20,7 @@ let accounts, certificateStorageInstance;
 
 
 async function parseTx(tx) {
-  console.log(await tx);
+  // console.log(await tx);
   const r = await (await tx).wait();
   const gasUsed = r.gasUsed.toNumber();
   console.log(`Gas used: ${gasUsed} / ${ethers.utils.formatEther(r.gasUsed.mul(ethers.utils.parseUnits('1','gwei')))} ETH / ${gasUsed / 50000} ERC20 transfers`);
@@ -43,13 +43,11 @@ function bytes32ToString(bytes32) {
   return ethers.utils.toUtf8String(bytes32).split('\u0000').join('');
 }
 
-function encodeCertifiedAs(courseName, percentile=0) {
-  if(courseName.length >= 30) throw new Error('only 30 chars allowed as courseName');
-  const courseNameHex = bytes32ToString(courseName).slice(0,30);
-
+function encodePercentile(percentile=0) {
   // 2 byte percentile can display upto 2 decimal accuracy
   const percentileMul100Hex = ethers.utils.hexlify(Math.floor(percentile*100));
-  console.log({courseNameHex,percentileMul100Hex});
+  // console.log({percentileMul100Hex});
+  return percentileMul100Hex;
 }
 
 
@@ -123,26 +121,32 @@ describe('Certificate Storage Contract', () => {
     let signedCertificate;
     it('new certificate signed by account 1', async() => {
       const studentName = 'Soham Zemse';
-      const nameBytes32 = stringToBytes32(studentName);
+      const nameBytes = ethers.utils.hexlify(ethers.utils.toUtf8Bytes(studentName));
 
       const certifiedAs = 'Blockchain Developer Level 1';
-      const certifiedAsBytes32 = encodeCertifiedAs(certifiedAs, 78.36);
+      const certifiedAsBytes = ethers.utils.hexlify(ethers.utils.toUtf8Bytes(certifiedAs));
 
-      const unsignedCertificate = ethers.utils.concat([nameBytes32, signature]);
+      const percentile = 78.93;
+      const percentileBytes = encodePercentile(percentile);
 
-      const nameHash = ethers.utils.keccak256(ethers.utils.arrayify(nameBytes32));
+      const rawCertificate = [nameBytes, certifiedAsBytes, percentileBytes];
+      const unsignedCertificateConcat = ethers.utils.hexlify(ethers.utils.concat(rawCertificate));
+      const unsignedCertHash = ethers.utils.keccak256(unsignedCertificateConcat);
+      console.log({nameBytes, certifiedAsBytes, percentileBytes, rawCertificate, unsignedCertificateConcat, unsignedCertHash});
 
       const signer = provider.getSigner(accounts[0]);
-      const signature = await signer.signMessage(ethers.utils.arrayify(nameHash));
-      const concat = ethers.utils.concat([nameBytes32, signature]);
-      const arg = ethers.utils.hexlify(concat);
+      const signature = await signer.signMessage(ethers.utils.arrayify(unsignedCertificateConcat));
       const splitSig = ethers.utils.splitSignature(signature);
-      console.log({studentName, nameBytes32, nameHash, signer:await signer.getAddress(), signature, arg});
 
-      // const response = await certificateStorageInstance.functions.getCertificateSignerAddress(arg);
-      // console.log({messageHash, response});
+      rawCertificate.push(ethers.utils.hexlify(splitSig.v));
+      rawCertificate.push(splitSig.r);
+      rawCertificate.push(splitSig.s);
 
-      await parseTx(certificateStorageInstance.functions.registerCertificate(arg))
+      const signedCertificateRLP = ethers.utils.RLP.encode(rawCertificate);
+
+      console.log({rawCertificate, signedCertificateRLP});
+
+      await parseTx(certificateStorageInstance.functions.registerCertificate(signedCertificateRLP))
 
       // const tx = await certificateStorageInstance.functions.testWorkaround();
       // console.log({txData: tx.data});

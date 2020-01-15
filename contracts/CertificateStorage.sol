@@ -1,15 +1,21 @@
 pragma solidity 0.6.1;
 pragma experimental ABIEncoderV2;
 
+import './RLP.sol';
+
 contract CertificateStorage {
+  using RLP for bytes;
+  using RLP for RLP.RLPItem;
+
   struct Certificate {
-    bytes32 name;
-    bytes32 certifiedAs;
+    bytes name;
+    bytes course;
+    bytes2 percentile;
     address certifiedBy;
   }
 
   struct CertifyingAuthority {
-    bytes32 name;
+    bytes name;
     bool isAuthorised;
   }
 
@@ -26,9 +32,14 @@ contract CertificateStorage {
     bytes32 _bytes32
   );
 
+  event Bytes(
+    bytes _bytes
+  );
+
   event CertificateRegistered(
-    bytes32 indexed _name,
-    bytes32 indexed _certifiedAs,
+    bytes indexed _name,
+    bytes indexed _course,
+    bytes2 _percentile,
     address indexed _certifiedBy,
     bytes32 _certificateHash
   );
@@ -42,7 +53,7 @@ contract CertificateStorage {
     deployer = msg.sender;
   }
 
-  function addCertifyingAuthority(address _authorityAddress, bytes32 _name) public onlyDeployer {
+  function addCertifyingAuthority(address _authorityAddress, bytes memory _name) public onlyDeployer {
     certifyingAuthorities[_authorityAddress] = CertifyingAuthority({
       name: _name,
       isAuthorised: true
@@ -57,7 +68,7 @@ contract CertificateStorage {
   }
 
   function updateCertifyingAuthority(
-    bytes32 _name
+    bytes memory _name
   ) public {
     require(
       certifyingAuthorities[msg.sender].isAuthorised
@@ -75,45 +86,69 @@ contract CertificateStorage {
     emit Address(_signer);
     emit Bytes32(_certificateHash);
 
-    require(
-      certifyingAuthorities[_signer].isAuthorised
-      , 'certifier not authorised'
-    );
+    // require(
+    //   certifyingAuthorities[_signer].isAuthorised
+    //   , 'certifier not authorised'
+    // );
+    //
+    // require(
+    //   certificates[_certificateHash].certifiedBy == address(0)
+    //   , 'certificate registered already'
+    // );
 
-    require(
-      certificates[_certificateHash].certifiedBy == address(0)
-      , 'certificate registered already'
-    );
+    // certificates[_certificateHash] = _certificateObj;
 
-    certificates[_certificateHash] = _certificateObj;
-
-    emit CertificateRegistered(
-      _certificateObj.name,
-      _certificateObj.certifiedAs,
-      _certificateObj.certifiedBy,
-      _certificateHash
-    );
+    // emit CertificateRegistered(
+    //   _certificateObj.name,
+    //   _certificateObj.course,
+    //   _certificateObj.percentile,
+    //   _certificateObj.certifiedBy,
+    //   _certificateHash
+    // );
   }
 
   function getCertificateAndSignerAddress(
-    bytes memory _certificate
-  ) public pure returns (Certificate memory) {
-    bytes32 _name;
-    bytes32 _certifiedAs;
+    bytes memory _signedCertificate
+  ) public returns (Certificate memory) {
+    RLP.RLPItem[] memory _signedCertificateItems = _signedCertificate.toRLPItem().toList();
 
+    bytes memory _name = _signedCertificateItems[0].toBytes();
+    bytes memory _course = _signedCertificateItems[1].toBytes();
+
+    bytes memory __percentile = _signedCertificateItems[2].toBytes();
+    bytes memory __v = _signedCertificateItems[3].toBytes();
+    bytes memory __r = _signedCertificateItems[4].toBytes();
+    bytes memory __s = _signedCertificateItems[5].toBytes();
+
+    bytes2 _percentile;
+    uint8 _v;
     bytes32 _r;
     bytes32 _s;
-    uint8 _v;
 
     assembly {
-      let _pointer := add(_certificate, 0x20)
-      _name := mload(_pointer)
-      _certifiedAs := mload(add(_pointer, 32))
-      _r := mload(add(_pointer, 64))
-      _s := mload(add(_pointer, 96))
-      _v := byte(0, mload(add(_pointer, 128)))
-      // _v := and(mload(add(_pointer, 65)), 255)
+      _percentile := mload(add(__percentile, 0x20))
+      _v := mload(add(__v, 0x20))
+      _r := mload(add(__r, 0x20))
+      _s := mload(add(__s, 0x20))
     }
+
+    bytes32 _unsignedCertificateHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32",_name, _course, __percentile));
+    // emit Bytes32(_unsignedCertificateHash);
+
+    _unsignedCertificateHash = keccak256(
+      abi.encode("\x19Ethereum Signed Message:\n32", _name, _course, __percentile)
+    );
+
+    emit Bytes(_name);
+    emit Bytes(_course);
+    emit Bytes(__percentile);
+
+    emit Bytes32(_unsignedCertificateHash);
+
+    // // also do below things in assembly
+    // uint8 _v = bytes1(_signedCertificateItems[3].toBytes());
+    // bytes32 _r = bytes32(_signedCertificateItems[4].toBytes());
+    // bytes32 _s = bytes32(_signedCertificateItems[5].toBytes());
 
     if(_v < 27) _v += 27;
 
@@ -122,15 +157,11 @@ contract CertificateStorage {
       , 'invalid recovery value'
     );
 
-    bytes32 _certificateHash = keccak256(abi.encodePacked(_name));
-    bytes32 _messageDigest = keccak256(
-      abi.encodePacked("\x19Ethereum Signed Message:\n32", _certificateHash)
-    );
-
-    address _signer = ecrecover(_messageDigest, _v, _r, _s);
+    address _signer = ecrecover(_unsignedCertificateHash, _v, _r, _s);
     Certificate memory _certificateObj = Certificate({
       name: _name,
-      certifiedAs: _certifiedAs,
+      course: _course,
+      percentile: _percentile,
       certifiedBy: _signer
     });
 

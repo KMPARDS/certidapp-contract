@@ -6,7 +6,7 @@ pragma experimental ABIEncoderV2;
 - certificate hash should be unsigned certificate hash
   and there should be a way add signer to that certificate
 
-// - 
+// -
 
 */
 
@@ -32,8 +32,8 @@ contract CertificateStorage {
   uint256 constant SIGNATURE_LENGTH = 65;
 
   event Certified(
-    bytes32 indexed _certificateHash,
-    address indexed _certifyingAuthority
+    bytes32 _certificateHash,
+    address _certifyingAuthority
   );
 
   event Authorization(
@@ -79,42 +79,61 @@ contract CertificateStorage {
     certifyingAuthorities[msg.sender].name = _name;
   }
 
-  function registerCertificate(bytes memory _signedCertificate) public {
+  function registerCertificate(
+    bytes memory _signedCertificate
+  ) public returns (
+    bytes32
+  ) {
     require(
       _signedCertificate.length > CERTIFICATE_DETAILS_LENGTH
       && (_signedCertificate.length - CERTIFICATE_DETAILS_LENGTH) % SIGNATURE_LENGTH == 0
       , 'invalid certificate length'
     );
 
-    Certificate memory _certificateObj = parseSignedCertificate(_signedCertificate, true);
+    (Certificate memory _certificateObj, bytes32 _certificateHash) = parseSignedCertificate(_signedCertificate, true);
 
-    bytes32 _certificateHash = keccak256(abi.encodePacked(_signedCertificate));
+    // require(
+    //   certificates[_certificateHash].signers.length == 0
+    //   , 'certificate registered already'
+    // );
 
-    require(
-      certificates[_certificateHash].signers.length == 0
-      , 'certificate registered already'
-    );
+    /// @dev signers in this transaction
+    bytes memory _newSigners = _certificateObj.signers;
 
-    bytes memory _signers = _certificateObj.signers;
+    /// @dev if certificate already registered then signers can be updated
+    bytes memory _updatedSigners = certificates[_certificateHash].signers;
 
-    for(uint256 _i = 0; _i < _signers.length; _i += 20) {
+    for(uint256 _i = 0; _i < _newSigners.length; _i += 20) {
       address _signer;
       assembly {
-        _signer := mload(add(_signers, add(0x14, _i)))
+        _signer := mload(add(_newSigners, add(0x14, _i)))
       }
-      emit Certified(
-        _certificateHash,
-        _signer
-      );
+      if(checkUniqueSigner(_signer, certificates[_certificateHash].signers)) {
+        _updatedSigners = abi.encodePacked(_updatedSigners, _signer);
+        emit Certified(
+          _certificateHash,
+          _signer
+        );
+      }
     }
 
-    certificates[_certificateHash] = _certificateObj;
+    if(certificates[_certificateHash].signers.length > 0) {
+      require(_updatedSigners.length > certificates[_certificateHash].signers.length, 'need new signers');
+      certificates[_certificateHash].signers = _updatedSigners;
+    } else {
+      certificates[_certificateHash] = _certificateObj;
+    }
+
+    return _certificateHash;
   }
 
   function parseSignedCertificate(
     bytes memory _signedCertificate,
     bool _allowedSignersOnly
-  ) public view returns (Certificate memory _certificateObj) {
+  ) public view returns (
+    Certificate memory _certificateObj,
+    bytes32 _certificateHash
+  ) {
     bytes32 _name;
     bytes32 _qualification;
     bytes32 _extraData;
@@ -127,7 +146,7 @@ contract CertificateStorage {
       _extraData := mload(add(_pointer, 0x40))
     }
 
-    bytes32 _messageDigest = keccak256(abi.encodePacked(
+    _certificateHash = keccak256(abi.encodePacked(
       PERSONAL_PREFIX,
       _name,
       _qualification,
@@ -149,7 +168,7 @@ contract CertificateStorage {
 
       require(_v == 27 || _v == 28, 'invalid recovery value');
 
-      address _signer = ecrecover(_messageDigest, _v, _r, _s);
+      address _signer = ecrecover(_certificateHash, _v, _r, _s);
 
       require(checkUniqueSigner(_signer, _signers), 'each signer should be unique');
 
@@ -167,6 +186,8 @@ contract CertificateStorage {
   }
 
   function checkUniqueSigner(address _signer, bytes memory _packedSigners) private pure returns (bool){
+    if(_packedSigners.length == 0) return true;
+
     require(_packedSigners.length % 20 == 0, 'invalid packed signers length');
 
     address _tempSigner;

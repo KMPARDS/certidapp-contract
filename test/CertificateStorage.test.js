@@ -27,14 +27,24 @@ const certifyingAuthorities = [
   [4, 'Apple']
 ];
 
-const certificateTestCase = {
-  studentAccount: 5,
-  studentName: 'Soham Zemse',
-  courseName: 'Blockchain Developer Level 1',
-  percentile: 78.36,
-  extraData: '0x',
-  signerAccounts: [1,2,3,4]
-};
+const certificateTestCases = [
+  {
+    studentAccount: 5,
+    studentName: 'Soham Zemse',
+    courseName: 'Blockchain Developer Level 1',
+    percentile: 78.36,
+    extraData: '0x',
+    signerAccounts: [1,2]
+  },
+  {
+    studentAccount: 5,
+    studentName: 'Soham Zemse',
+    courseName: 'Blockchain Developer Level 1',
+    percentile: 78.36,
+    extraData: '0x',
+    signerAccounts: [3]
+  }
+];
 
 async function parseTx(tx) {
   // console.log(await tx);
@@ -77,6 +87,16 @@ function decodeQualification(qualification) {
   const courseName = bytesToString(qualification.slice(0,62));
   const percentile = (+('0x'+qualification.slice(62,66)))/100;
   return {courseName, percentile};
+}
+
+function parsePackedAddress(packedAddresses) {
+  if(packedAddresses.slice(0,2).toLowerCase() === '0x') packedAddresses = packedAddresses.slice(2);
+  if(packedAddresses.length%40 !== 0) throw new Error('Invalid packed addresses');
+  const addressArray = [];
+  for(let i = 0; i < packedAddresses.length/40; i++) {
+    addressArray.push('0x'+packedAddresses.slice(0+40*i,40+40*i));
+  }
+  return addressArray;
 }
 
 /// @dev this is a test case collection
@@ -136,73 +156,78 @@ describe('Certificate Storage Contract', () => {
       });
     });
 
-    let signedCertificate;
-    it('new certificate signed by account 1', async() => {
-      const nameBytes32 = stringToBytes32(certificateTestCase.studentName);
-      const qualificationBytes32 = encodeQualification(
-        certificateTestCase.courseName,
-        certificateTestCase.percentile
-      );
-      const extraDataBytes32 = ethers.utils.hexZeroPad(certificateTestCase.extraData, 32);
+    certificateTestCases.forEach(certificateTestCase => {
+      let signedCertificate;
+      it('new certificate signed by account 1', async() => {
+        const nameBytes32 = stringToBytes32(certificateTestCase.studentName);
+        const qualificationBytes32 = encodeQualification(
+          certificateTestCase.courseName,
+          certificateTestCase.percentile
+        );
+        const extraDataBytes32 = ethers.utils.hexZeroPad(certificateTestCase.extraData, 32);
 
-      const unsignedCertificateConcat = ethers.utils.hexlify(ethers.utils.concat([
-        nameBytes32,
-        qualificationBytes32,
-        extraDataBytes32
-      ]));
+        const unsignedCertificateConcat = ethers.utils.hexlify(ethers.utils.concat([
+          nameBytes32,
+          qualificationBytes32,
+          extraDataBytes32
+        ]));
 
-      const unsignedCertificateHash = ethers.utils.keccak256(
-        ethers.utils.arrayify(unsignedCertificateConcat)
-      );
-      // console.log({unsignedCertificateConcat, unsignedCertificateHash});
+        const unsignedCertificateHash = ethers.utils.keccak256(
+          ethers.utils.concat([ethers.utils.toUtf8Bytes('\x19Ethereum Signed Message:\n96'),unsignedCertificateConcat])
+        );
+        console.log({unsignedCertificateConcat, unsignedCertificateHash});
 
-      let signedCertificateConcat = unsignedCertificateConcat;
-      const signers = [];
-      for(const accId of certificateTestCase.signerAccounts) {
-        const signer = provider.getSigner(accounts[accId]);
-        signers.push(await signer.getAddress())
-        const signature = await signer.signMessage(ethers.utils.arrayify(unsignedCertificateConcat));
-        signedCertificateConcat = ethers.utils.concat([signedCertificateConcat, signature]);
-      }
+        let signedCertificateConcat = unsignedCertificateConcat;
+        const signers = [];
+        for(const accId of certificateTestCase.signerAccounts) {
+          const signer = provider.getSigner(accounts[accId]);
+          signers.push(await signer.getAddress())
+          const signature = await signer.signMessage(ethers.utils.arrayify(unsignedCertificateConcat));
+          signedCertificateConcat = ethers.utils.concat([signedCertificateConcat, signature]);
+        }
 
-      const arg = ethers.utils.hexlify(signedCertificateConcat);
-      signedCertificate = arg;
+        const arg = ethers.utils.hexlify(signedCertificateConcat);
+        signedCertificate = arg;
 
-      console.log({
-        nameBytes32,
-        qualificationBytes32,
-        extraDataBytes32,
-        signedCertificate,
-        signers
+        console.log({
+          nameBytes32,
+          qualificationBytes32,
+          extraDataBytes32,
+          signedCertificate,
+          signers
+        });
+
+
+        // assert.equal(signedCertificate.length, SIGNED_CERTIFICATE_LENGTH, 'invalid signed certificate length');
       });
 
+      it('certificate is being submitted to contract from account 2', async() => {
+        console.log({signedCertificate});
+        const _certificateStorageInstance = certificateStorageInstance.connect(provider.getSigner(accounts[certificateTestCase.studentAccount]));
 
-      // assert.equal(signedCertificate.length, SIGNED_CERTIFICATE_LENGTH, 'invalid signed certificate length');
-    });
+        await parseTx(certificateStorageInstance.functions.registerCertificate(signedCertificate));
 
-    it('certificate is being submitted to contract from account 2', async() => {
-      console.log({signedCertificate});
-      const _certificateStorageInstance = certificateStorageInstance.connect(provider.getSigner(accounts[certificateTestCase.studentAccount]));
+        const unsignedCertificate = signedCertificate.slice(0,2+96*2);
+        const certificateHash = ethers.utils.keccak256(ethers.utils.concat([ethers.utils.toUtf8Bytes('\x19Ethereum Signed Message:\n96'), unsignedCertificate]));
+        console.log({certificateHash, unsignedCertificate});
 
-      await parseTx(certificateStorageInstance.functions.registerCertificate(signedCertificate));
+        const certificate = await certificateStorageInstance.functions.certificates(certificateHash);
+        console.log(certificate);
 
-      const certificateHash = ethers.utils.keccak256(signedCertificate);
-      const certificate = await certificateStorageInstance.functions.certificates(certificateHash);
-      console.log(certificate);
+        const decodedQualification = decodeQualification(certificate.qualification);
+        console.log(decodedQualification);
 
-      const decodedQualification = decodeQualification(certificate.qualification);
-      console.log(decodedQualification);
+        console.log({signersInContract: parsePackedAddress(certificate.signers)});
 
-      // console.log();
+        assert.equal(bytesToString(certificate.name), certificateTestCase.studentName, 'student name should match on certificate');
+        assert.equal(decodedQualification.courseName, certificateTestCase.courseName, 'course name should match on certificate');
+        assert.equal(decodedQualification.percentile, certificateTestCase.percentile, 'course name should match on certificate');
 
-      assert.equal(bytesToString(certificate.name), certificateTestCase.studentName, 'student name should match on certificate');
-      assert.equal(decodedQualification.courseName, certificateTestCase.courseName, 'course name should match on certificate');
-      assert.equal(decodedQualification.percentile, certificateTestCase.percentile, 'course name should match on certificate');
-
-      // const zemse = await certificateStorageInstance.functions.zemse();
-      // console.log({zemse});
-      //
-      // assert.ok(certifyingAuthority.isAuthorised, 'certifier should be authorised');
-    });
+        // const zemse = await certificateStorageInstance.functions.zemse();
+        // console.log({zemse});
+        //
+        // assert.ok(certifyingAuthority.isAuthorised, 'certifier should be authorised');
+      });
+    })
   });
 });

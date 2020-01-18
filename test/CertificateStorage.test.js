@@ -22,16 +22,18 @@ const SIGNED_CERTIFICATE_LENGTH = (96 + 65) * 2 + 2;
 
 const certifyingAuthorities = [
   [1, 'Blocklogy'],
-  [2, 'Microsoft']
+  [2, 'Microsoft'],
+  [3, 'Google'],
+  [4, 'Apple']
 ];
 
 const certificateTestCase = {
-  studentAccount: 3,
+  studentAccount: 5,
   studentName: 'Soham Zemse',
   courseName: 'Blockchain Developer Level 1',
   percentile: 78.36,
   extraData: '0x',
-  signerAccounts: [1, 2]
+  signerAccounts: [1,2,3,4]
 };
 
 async function parseTx(tx) {
@@ -190,6 +192,8 @@ describe('Certificate Storage Contract', () => {
 
       const decodedQualification = decodeQualification(certificate.qualification);
       console.log(decodedQualification);
+
+      // console.log();
 
       assert.equal(bytesToString(certificate.name), certificateTestCase.studentName, 'student name should match on certificate');
       assert.equal(decodedQualification.courseName, certificateTestCase.courseName, 'course name should match on certificate');

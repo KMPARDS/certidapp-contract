@@ -7,6 +7,9 @@ pragma experimental ABIEncoderV2;
   and there should be a way add signer to that certificate
 
 // -
+fdp bootcamp webinar participation
+
+// add option for certifiying authority to transfer certificationship to other address
 
 */
 
@@ -31,9 +34,11 @@ contract CertificateStorage {
   uint256 constant CERTIFICATE_DETAILS_LENGTH = 96;
   uint256 constant SIGNATURE_LENGTH = 65;
 
+  // bytes public zemse;
+
   event Certified(
-    bytes32 _certificateHash,
-    address _certifyingAuthority
+    bytes32 indexed _certificateHash,
+    address indexed _certifyingAuthority
   );
 
   event Authorization(
@@ -78,7 +83,7 @@ contract CertificateStorage {
     );
     certifyingAuthorities[msg.sender].name = _name;
   }
-
+ 
   function registerCertificate(
     bytes memory _signedCertificate
   ) public returns (
@@ -146,6 +151,7 @@ contract CertificateStorage {
       _extraData := mload(add(_pointer, 0x40))
     }
 
+    // zemse =
     _certificateHash = keccak256(abi.encodePacked(
       PERSONAL_PREFIX,
       _name,

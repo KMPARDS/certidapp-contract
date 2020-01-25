@@ -31,7 +31,7 @@ const certificateTestCases = [
   {
     studentAccount: 5,
     studentName: 'Soham Zemse',
-    courseName: 'Blockchain Developer Level 1',
+    courseName: '5 Days FDP on Blockchain',
     percentile: 78.36,
     extraData: '0x',
     signerAccounts: [1,2]
@@ -42,7 +42,7 @@ const certificateTestCases = [
     courseName: 'Blockchain Developer Level 1',
     percentile: 78.36,
     extraData: '0x',
-    signerAccounts: [3]
+    signerAccounts: [1,2]
   }
 ];
 

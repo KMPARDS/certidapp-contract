@@ -88,7 +88,10 @@ function parsePackedAddress(packedAddresses) {
 // 0100 => boolean
 // 0101 => image
 // 0110 => date timestamp
+
+// add float data type for arbitary entries
 const dataTypes = [null, 'bytes', 'number', 'string', 'boolean', 'image', 'date'];
+const order = ['name', 'subject', 'score', 'category'];
 
 function getDataTypeHexByte(type) {
   const index = dataTypes.indexOf(type);
@@ -129,12 +132,27 @@ function bytify(input) {
   }
 }
 
+function renderBytes(hex, type) {
+  switch(type) {
+    case 'bytes':
+      return hex;
+    case 'number':
+      return +hex;
+    case 'string':
+      return bytesToString(hex);
+    case 'boolean':
+      return !!(+hex);
+    default:
+      return null;
+  }
+}
+
 function isProperValue(input) {
   return ![undefined, null, NaN].includes(input);
 }
 
+// IMP: when encoding arbitary key value pairs, set float numbers with decimals
 function encodeCertificateObject(obj) {
-  const order = ['name', 'subject', 'score', 'category'];
   const entries = Object.entries(obj);
   const certRLPArray = [];
 
@@ -211,26 +229,29 @@ function addSignaturesToCertificateRLP(encodedFullCertificate, signature = []) {
 
 function decodeCertificate(encodedCertificate) {
   let fullRLP = typeof encodedCertificate === 'object' ? encodedCertificate.fullRLP : encodedCertificate;
-  const decoded = ethers.utils.RLP.decode(encodedFullCertificate.fullRLP);
-  const order = ['name', 'subject', 'score', 'category'];
+  const decoded = ethers.utils.RLP.decode(fullRLP);
   const obj = {};
 
-  decoded[0].forEach((entry, i) => {
+  decoded.forEach((entry, i) => {
     if(i < order.length) {
       if(order[i] !== 'score') {
-        obj[order[i]] = ethers.utils.toUtfyString(entry);
+        obj[order[i]] = ethers.utils.toUtf8String(entry);
       } else {
-        if(typeof decoded[0][i] === 'object') {
+        if(typeof entry === 'object') {
           const decimals = +entry[0];
           obj[order[i]] = +entry[1] / 10**decimals;
         } else {
           obj[order[i]] = +entry / 10**2;
         }
       }
-    } else {
-      // (entry[0])
+    } else if(i > order.length){
+      const type = dataTypes[+('0x'+decoded[order.length].slice(1+i-order.length, 2+i-order.length))];
+      // console.log({value: entry[1], type});
+      obj[bytesToString(entry[0])] = renderBytes(entry[1], type);
     }
   });
+
+  return obj;
 }
 
 /// @dev this is a test case collection
@@ -328,8 +349,8 @@ describe('Certificate Storage Contract', () => {
         const certificate = await certificateStorageInstance.functions.certificates(certificateHash);
         console.log(certificate);
 
-        // const decodedQualification = decodeQualification(certificate.qualification);
-        // console.log(decodedQualification);
+        const decodedCertificate = decodeCertificate(certificate.data);
+        console.log({decodedCertificate});
 
         console.log({signersInContract: parsePackedAddress(certificate.signers)});
 

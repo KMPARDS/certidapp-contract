@@ -30,11 +30,14 @@ const certifyingAuthorities = [
 const certificateTestCases = [
   {
     studentAccount: 5,
-    studentName: 'Soham Zemse',
-    courseName: '5 Days FDP on Blockchain',
-    percentile: 78.36,
-    extraData: '0x',
-    signerAccounts: [1,2]
+    signerAccounts: [1,2],
+    certificateObj: {
+      name: 'Soham Zemse',
+      subject: '5 Days FDP on Blockchain',
+      score: 78.36,
+      category: 'Completion',
+      id: 51000
+    }
   },
   // {
   //   studentAccount: 5,
@@ -76,26 +79,60 @@ function parsePackedAddress(packedAddresses) {
   return addressArray;
 }
 
-// take number or string and convert it into bytes
-const bytify = input => {
+// default parameters {name, subject, score} = obj
+// extra parameters can be added which can have data types:
+// 0 is not considered because it is used for padding
+// 0001 => bytes
+// 0010 => number
+// 0011 => string
+// 0100 => boolean
+// 0101 => image
+// 0110 => date timestamp
+const dataTypes = [null, 'bytes', 'number', 'string', 'boolean', 'image', 'date'];
+
+function getDataTypeHexByte(type) {
+  const index = dataTypes.indexOf(type);
+  if(index === -1) throw new Error('Invalid certificate data type: ' + type);
+  return index.toString(16);
+}
+
+function guessDataTypeFromInput(input) {
   switch(typeof input) {
     case 'string':
-      return ethers.utils.hexlify(ethers.utils.toUtf8Bytes(input));
+      if(input.slice(0,2) === '0x') {
+        return 'bytes';
+      }
+      return 'string';
+    default:
+      return typeof input;
+  }
+}
+
+// remaining for image and data
+// take number or string and convert it into bytes
+function bytify(input) {
+  switch(guessDataTypeFromInput(input)) {
+    case 'bytes':
+      return input;
     case 'number':
       hex = Number(input).toString(16);
       if(hex.length % 2 !== 0) {
           hex = '0'+hex;
       }
       return '0x' + hex;
+    case 'string':
+      return ethers.utils.hexlify(ethers.utils.toUtf8Bytes(input));
+    case 'boolean':
+      return input ? '0x01' : '0x00';
     default:
       return null;
   }
 }
 
-const isProperValue = input => ![undefined, null, NaN].includes(input);
+function isProperValue(input) {
+  return ![undefined, null, NaN].includes(input);
+}
 
-// default parameters {name, subject, score} = obj
-// extra parameters can be added
 function encodeCertificateObject(obj) {
   const order = ['name', 'subject', 'score', 'category'];
   const entries = Object.entries(obj);
@@ -121,12 +158,25 @@ function encodeCertificateObject(obj) {
     }
   });
 
+  const extraData = entries.filter(property => !order.includes(property[0]) && isProperValue(property[1]));
 
-  entries.filter(property => !order.includes(property[0]) && isProperValue(property[1])).forEach(property => {
-    certRLPArray.push([bytify(property[0]), bytify(property[1])]);
-  });
+  if(extraData.length) {
+    // pushing datatype storage of the extra datas
+    certRLPArray.push('');
+    const datatypeIndex = certRLPArray.length - 1;
+    extraData.forEach(property => {
+      certRLPArray[datatypeIndex] = certRLPArray[datatypeIndex] + getDataTypeHexByte(guessDataTypeFromInput(property[1]));
+      certRLPArray.push([bytify(property[0]), bytify(property[1])]);
+    });
 
-  // return certRLPArray;
+    if(certRLPArray[datatypeIndex].length % 2) {
+      certRLPArray[datatypeIndex] = '0' + certRLPArray[datatypeIndex];
+    }
+
+    certRLPArray[datatypeIndex] = '0x' + certRLPArray[datatypeIndex];
+  }
+
+  console.log(certRLPArray);
   const dataRLP = ethers.utils.RLP.encode(certRLPArray);
   const digest = ethers.utils.hexlify(ethers.utils.concat([ethers.utils.toUtf8Bytes('\x19Ethereum Signed Message:\n'+(dataRLP.length/2 - 1)),dataRLP]));
   // console.log({zemse});
@@ -157,6 +207,30 @@ function addSignaturesToCertificateRLP(encodedFullCertificate, signature = []) {
     dataRLP,
     certificateHash: ethers.utils.keccak256(digest)
   };
+}
+
+function decodeCertificate(encodedCertificate) {
+  let fullRLP = typeof encodedCertificate === 'object' ? encodedCertificate.fullRLP : encodedCertificate;
+  const decoded = ethers.utils.RLP.decode(encodedFullCertificate.fullRLP);
+  const order = ['name', 'subject', 'score', 'category'];
+  const obj = {};
+
+  decoded[0].forEach((entry, i) => {
+    if(i < order.length) {
+      if(order[i] !== 'score') {
+        obj[order[i]] = ethers.utils.toUtfyString(entry);
+      } else {
+        if(typeof decoded[0][i] === 'object') {
+          const decimals = +entry[0];
+          obj[order[i]] = +entry[1] / 10**decimals;
+        } else {
+          obj[order[i]] = +entry / 10**2;
+        }
+      }
+    } else {
+      // (entry[0])
+    }
+  });
 }
 
 /// @dev this is a test case collection
@@ -219,13 +293,7 @@ describe('Certificate Storage Contract', () => {
     certificateTestCases.forEach(certificateTestCase => {
       let encodedCertificateObj;
       it('new certificate signed by account 1', async() => {
-        encodedCertificateObj = encodeCertificateObject({
-          name: certificateTestCase.studentName,
-          subject: certificateTestCase.courseName,
-          score: certificateTestCase.percentile,
-          category: 'Completion'
-          // id: 511015067
-        });
+        encodedCertificateObj = encodeCertificateObject(certificateTestCase.certificateObj);
         console.log({encodedCertificateObj});
 
         const unsignedCertificateHash = encodedCertificateObj.certificateHash;

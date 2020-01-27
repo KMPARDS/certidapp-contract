@@ -34,11 +34,13 @@ const certificateTestCases = [
     certificateObj: {
       name: 'Soham Zemse',
       subject: '5 Days FDP on Blockchain',
-      score: 78.36,
+      score: 78764545.12939485,
       category: 'Completion',
       id: 51000.223455,
       id2: 51000,
       id3: '51000',
+      id4: false,
+      id5: true
     }
   },
   // {
@@ -151,8 +153,10 @@ function renderBytes(hex, type) {
     case 'bytes':
       return hex;
     case 'number':
+      if(hex === '0x') return null;
       return +hex;
     case 'float':
+      if(hex === '0x') return null;
       const decimals = +('0x'+hex.slice(2,4));
       const number = +('0x'+hex.slice(4));
       return number / 10**decimals;
@@ -180,12 +184,7 @@ function encodeCertificateObject(obj, signature = []) {
     if(property === 'score') {
       // adding score into rlpArray
       if(isProperValue(obj['score'])) {
-        const numberOfDecimals = (String(obj['score']).split('.')[1] || '').length;
-        if(numberOfDecimals <= 2) {
-          certRLPArray.push(bytify((+obj['score']) * 10**2));
-        } else {
-          certRLPArray.push([bytify(numberOfDecimals), bytify((+obj['score']) * 10**numberOfDecimals)])
-        }
+        certRLPArray.push(bytify(+obj['score'], 'float'));
       } else {
         certRLPArray.push('0x');
       }
@@ -256,12 +255,7 @@ function decodeCertificate(encodedCertificate) {
       if(order[i] !== 'score') {
         obj[order[i]] = ethers.utils.toUtf8String(entry);
       } else {
-        if(typeof entry === 'object') {
-          const decimals = +entry[0];
-          obj[order[i]] = +entry[1] / 10**decimals;
-        } else {
-          obj[order[i]] = +entry / 10**2;
-        }
+        obj[order[i]] = renderBytes(entry, 'float');
       }
     } else if(i > order.length){
       const type = dataTypes[+('0x'+decoded[order.length].slice(1+i-order.length, 2+i-order.length))];

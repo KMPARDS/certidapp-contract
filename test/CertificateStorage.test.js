@@ -14,6 +14,7 @@ const provider = new ethers.providers.Web3Provider(ganache.provider({ gasLimit: 
 
 /// @dev importing build file
 const certificateStorageJSON = require('../build/CertificateStorage_CertificateStorage.json');
+const proxyJSON = require('../build/Proxy_Proxy.json');
 
 /// @dev initialize global variables
 let accounts, certificateStorageInstance;
@@ -314,8 +315,33 @@ describe('Certificate Storage Contract', () => {
         provider.getSigner(accounts[0])
       );
       certificateStorageInstance =  await CertificateStorageContractFactory.deploy();
+      console.log(await certificateStorageInstance.functions.manager());
 
       assert.ok(certificateStorageInstance.address, 'conract address should be present');
+    });
+
+    it('deploys Proxy contract from first account', async() => {
+
+      /// @dev you create a contract factory for deploying contract. Refer to ethers.js documentation at https://docs.ethers.io/ethers.js/html/
+      const ProxyContractFactory = new ethers.ContractFactory(
+        proxyJSON.abi,
+        proxyJSON.evm.bytecode.object,
+        provider.getSigner(accounts[0])
+      );
+      const proxyContractInstance =  await ProxyContractFactory.deploy();
+      assert.ok(proxyContractInstance.address, 'conract address should be present');
+
+      await parseTx(proxyContractInstance.functions.upgradeTo(certificateStorageInstance.address));
+
+      const implementation = await proxyContractInstance.functions.implementation();
+      // console.log(implementation, certificateStorageInstance.address);
+      assert.equal(implementation, certificateStorageInstance.address, 'implementation address should be set');
+
+      certificateStorageInstance = new ethers.Contract(
+        proxyContractInstance.address,
+        certificateStorageJSON.abi,
+        provider.getSigner(accounts[0])
+      )
     });
   });
 

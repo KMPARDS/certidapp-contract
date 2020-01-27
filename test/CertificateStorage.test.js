@@ -250,7 +250,16 @@ function decodeCertificate(encodedCertificate) {
   const decoded = ethers.utils.RLP.decode(fullRLP);
   const obj = {};
 
-  decoded.forEach((entry, i) => {
+  let decodedCertificatePart;
+  //checking if decoded is of fullRLP or certificate data part
+  if(typeof decoded[0] === 'string') {
+    decodedCertificatePart = decoded;
+  } else {
+    decodedCertificatePart = decoded[0];
+    signatures = decoded.slice(1);
+  }
+
+  decodedCertificatePart.forEach((entry, i) => {
     if(i < order.length) {
       if(order[i] !== 'score') {
         obj[order[i]] = ethers.utils.toUtf8String(entry);
@@ -258,7 +267,7 @@ function decodeCertificate(encodedCertificate) {
         obj[order[i]] = renderBytes(entry, 'float');
       }
     } else if(i > order.length){
-      const type = dataTypes[+('0x'+decoded[order.length].slice(1+i-order.length, 2+i-order.length))];
+      const type = dataTypes[+('0x'+decodedCertificatePart[order.length].slice(1+i-order.length, 2+i-order.length))];
       // console.log({value: entry[1], type});
       obj[bytesToString(entry[0])] = renderBytes(entry[1], type);
     }
@@ -328,7 +337,7 @@ describe('Certificate Storage Contract', () => {
       let encodedCertificateObj;
       it('new certificate signed by account 1', async() => {
         encodedCertificateObj = encodeCertificateObject(certificateTestCase.certificateObj);
-        console.log({encodedCertificateObj});
+        // console.log({encodedCertificateObj});
 
         const unsignedCertificateHash = encodedCertificateObj.certificateHash;
 
@@ -346,8 +355,11 @@ describe('Certificate Storage Contract', () => {
           signers
         });
 
-
-        // assert.equal(signedCertificate.length, SIGNED_CERTIFICATE_LENGTH, 'invalid signed certificate length');
+        // test cases:
+        const decoded = decodeCertificate(encodedCertificateObj);
+        Object.keys(certificateTestCase.certificateObj).forEach(key => {
+          assert.equal(decoded[key], certificateTestCase.certificateObj[key], `invalid ${key} key`);
+        });
       });
 
       it('certificate is being submitted to contract from account 2', async() => {

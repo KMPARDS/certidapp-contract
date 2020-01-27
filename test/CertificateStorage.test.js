@@ -30,63 +30,47 @@ const certifyingAuthorities = [
 const certificateTestCases = [
   {
     studentAccount: 5,
-    studentName: 'Soham Zemse',
-    courseName: '5 Days FDP on Blockchain',
-    percentile: 78.36,
-    extraData: '0x',
-    signerAccounts: [1,2]
+    signerAccounts: [1,2,3,4],
+    certificateObj: {
+      name: 'Soham Zemse',
+      subject: '5 Days FDP on Blockchain',
+      score: 78764545.12939485,
+      category: 'Completion',
+      id: 51000.223455,
+      id2: 51000,
+      id3: '51000',
+      id4: false,
+      id5: true
+    }
   },
-  {
-    studentAccount: 5,
-    studentName: 'Soham Zemse',
-    courseName: 'Blockchain Developer Level 1',
-    percentile: 78.36,
-    extraData: '0x',
-    signerAccounts: [1,2]
-  }
+  // {
+  //   studentAccount: 5,
+  //   studentName: 'Soham Zemse',
+  //   courseName: 'Blockchain Developer Level 1',
+  //   percentile: 78.36,
+  //   extraData: '0x',
+  //   signerAccounts: [1,2]
+  // }
 ];
 
 async function parseTx(tx) {
   // console.log(await tx);
   const r = await (await tx).wait();
   const gasUsed = r.gasUsed.toNumber();
+  console.group();
   console.log(`Gas used: ${gasUsed} / ${ethers.utils.formatEther(r.gasUsed.mul(ethers.utils.parseUnits('1','gwei')))} ETH / ${gasUsed / 50000} ERC20 transfers`);
   r.logs.forEach(log => {
-    console.log(log.data);
+    console.log('data', log.data);
+    if(log.topics.length > 1) {
+      console.log('topics', log.topics);
+    }
   });
+  console.groupEnd();
   return r;
-}
-
-function stringToBytes32(text) {
-  // text = text.slice(0,32);
-  if(text.length >= 32) throw new Error('only 32 chars allowed in bytes32');
-  var result = ethers.utils.hexlify(ethers.utils.toUtf8Bytes(text));
-  while (result.length < 66) { result += '0'; }
-  if (result.length !== 66) { throw new Error("invalid web3 implicit bytes32"); }
-  return result;
 }
 
 function bytesToString(bytes) {
   return ethers.utils.toUtf8String(bytes).split('\u0000').join('');
-}
-
-function encodeQualification(courseName, percentile=0) {
-  if(courseName.length >= 30) throw new Error('only 30 chars allowed as courseName');
-  const courseNameHex = stringToBytes32(courseName).slice(0,62);
-
-  // 2 byte percentile can display upto 2 decimal accuracy
-  const percentileMul100Hex = ethers.utils.hexlify(Math.floor(percentile*100));
-  // console.log({courseNameHex,percentileMul100Hex});
-
-  return ethers.utils.hexlify(ethers.utils.concat([courseNameHex, percentileMul100Hex]));
-}
-
-function decodeQualification(qualification) {
-  if(qualification.slice(0,2) != '0x') throw new Error('hex string should start with 0x');
-  // qualification = qualification.slice(2);
-  const courseName = bytesToString(qualification.slice(0,62));
-  const percentile = (+('0x'+qualification.slice(62,66)))/100;
-  return {courseName, percentile};
 }
 
 function parsePackedAddress(packedAddresses) {
@@ -97,6 +81,207 @@ function parsePackedAddress(packedAddresses) {
     addressArray.push('0x'+packedAddresses.slice(0+40*i,40+40*i));
   }
   return addressArray;
+}
+
+// default parameters {name, subject, score} = obj
+// extra parameters can be added which can have data types:
+// 0 is not considered because it is used for padding
+// 0001 => bytes
+// 0010 => number
+// 0011 => string
+// 0100 => boolean
+// 0101 => image
+// 0110 => date timestamp
+
+// add float data type for arbitary entries
+const dataTypes = [null, 'bytes', 'number', 'float', 'string', 'boolean', 'image', 'date'];
+const order = ['name', 'subject', 'score', 'category'];
+
+function getDataTypeHexByte(type) {
+  const index = dataTypes.indexOf(type);
+  if(index === -1) throw new Error('Invalid certificate data type: ' + type);
+  return index.toString(16);
+}
+
+function guessDataTypeFromInput(input) {
+  switch(typeof input) {
+    case 'string':
+      if(input.slice(0,2) === '0x') {
+        return 'bytes';
+      }
+      return 'string';
+    case 'number':
+      if(String(input).split('.')[1]) {
+        return 'float';
+      }
+      return 'number';
+    default:
+      return typeof input;
+  }
+}
+
+// remaining for image and data
+// take number or string and convert it into bytes
+function bytify(input, type) {
+  switch(type || guessDataTypeFromInput(input)) {
+    case 'bytes':
+      return input;
+    case 'number':
+      hex = Number(input).toString(16);
+      if(hex.length % 2 !== 0) {
+          hex = '0'+hex;
+      }
+      return '0x' + hex;
+    case 'float':
+      const numberOfDecimals = (String(input).split('.')[1] || '').length;
+      const decimalByte = bytify(numberOfDecimals, 'number').slice(2);
+      if(decimalByte.length !== 2) throw new Error(`Invalid decimal byte: (${decimalByte})`);
+      const numberWithoutDecimals = input * 10**numberOfDecimals;
+      const numberBytes = bytify(numberWithoutDecimals, 'number').slice(2);
+      return '0x' + decimalByte + numberBytes;
+    case 'string':
+      return ethers.utils.hexlify(ethers.utils.toUtf8Bytes(input));
+    case 'boolean':
+      return input ? '0x01' : '0x00';
+    default:
+      return null;
+  }
+}
+
+function renderBytes(hex, type) {
+  switch(type) {
+    case 'bytes':
+      return hex;
+    case 'number':
+      if(hex === '0x') return null;
+      return +hex;
+    case 'float':
+      if(hex === '0x') return null;
+      const decimals = +('0x'+hex.slice(2,4));
+      const number = +('0x'+hex.slice(4));
+      return number / 10**decimals;
+    case 'string':
+      return bytesToString(hex);
+    case 'boolean':
+      return !!(+hex);
+    default:
+      return hex;
+  }
+}
+
+function isProperValue(input) {
+  return ![undefined, null, NaN].includes(input);
+}
+
+function getCertificateHashFromDataRLP(certificateDataRLP) {
+  const digest = ethers.utils.hexlify(ethers.utils.concat([ethers.utils.toUtf8Bytes('\x19Ethereum Signed Message:\n'+(certificateDataRLP.length/2 - 1)),certificateDataRLP]));
+  return ethers.utils.keccak256(digest);
+}
+
+function encodeCertificateObject(obj, signature = []) {
+  let signatureArray = typeof signature === 'object' ? signature : [signature];
+  const entries = Object.entries(obj);
+  const certRLPArray = [];
+
+  // adding name and subject into rlpArray
+  order.forEach(property => {
+    if(property === 'score') {
+      // adding score into rlpArray
+      if(isProperValue(obj['score'])) {
+        certRLPArray.push(bytify(+obj['score'], 'float'));
+      } else {
+        certRLPArray.push('0x');
+      }
+    } else {
+      const hex = isProperValue(obj[property]) ? bytify(obj[property]) : '0x';
+      certRLPArray.push(hex);
+    }
+  });
+
+  const extraData = entries.filter(property => !order.includes(property[0]) && isProperValue(property[1]));
+
+  if(extraData.length) {
+    // pushing datatype storage of the extra datas
+    certRLPArray.push('');
+    const datatypeIndex = certRLPArray.length - 1;
+    extraData.forEach(property => {
+      certRLPArray[datatypeIndex] = certRLPArray[datatypeIndex] + getDataTypeHexByte(guessDataTypeFromInput(property[1]));
+      certRLPArray.push([bytify(property[0]), bytify(property[1])]);
+    });
+
+    if(certRLPArray[datatypeIndex].length % 2) {
+      certRLPArray[datatypeIndex] = certRLPArray[datatypeIndex] + '0';
+    }
+
+    certRLPArray[datatypeIndex] = '0x' + certRLPArray[datatypeIndex];
+  }
+
+  console.log(certRLPArray);
+  const dataRLP = ethers.utils.RLP.encode(certRLPArray);
+  return {
+    fullRLP: ethers.utils.RLP.encode([certRLPArray, ...signatureArray]),
+    dataRLP,
+    certificateHash: getCertificateHashFromDataRLP(dataRLP)
+  };
+}
+
+function addSignaturesToCertificateRLP(encodedFullCertificate, signature = []) {
+  let signatureArray = typeof signature === 'object' ? signature : [signature];
+  let certificateData;
+  if(typeof encodedCertificate === 'object') {
+    certificateData = ethers.utils.RLP.decode(encodedCertificate.dataRLP);
+  } else {
+    const decoded = ethers.utils.RLP.decode(encodedFullCertificate.fullRLP);
+    certificateData = decoded[0];
+    if(decoded.length > 1) {
+      signatureArray = [...decoded.slice(1), ...signatureArray];
+    }
+  }
+  // console.log({signatureArray});
+  const dataRLP = ethers.utils.RLP.encode(certificateData);
+
+  return {
+    fullRLP: ethers.utils.RLP.encode([certificateData, ...signatureArray]),
+    dataRLP,
+    certificateHash: getCertificateHashFromDataRLP(dataRLP)
+  };
+}
+
+function decodeCertificateData(encodedCertificate) {
+  let fullRLP = typeof encodedCertificate === 'object' ? encodedCertificate.fullRLP : encodedCertificate;
+  const decoded = ethers.utils.RLP.decode(fullRLP);
+  const obj = {};
+
+  let decodedCertificatePart, signatureArray;
+  //checking if decoded is of fullRLP or certificate data part
+  if(typeof decoded[0] === 'string') {
+    decodedCertificatePart = decoded;
+  } else {
+    decodedCertificatePart = decoded[0];
+    signatureArray = decoded.slice(1);
+  }
+
+  decodedCertificatePart.forEach((entry, i) => {
+    if(i < order.length) {
+      if(order[i] !== 'score') {
+        obj[order[i]] = ethers.utils.toUtf8String(entry);
+      } else {
+        obj[order[i]] = renderBytes(entry, 'float');
+      }
+    } else if(i > order.length){
+      const type = dataTypes[+('0x'+decodedCertificatePart[order.length].slice(1+i-order.length, 2+i-order.length))];
+      // console.log({value: entry[1], type});
+      obj[bytesToString(entry[0])] = renderBytes(entry[1], type);
+    }
+  });
+
+  if(signatureArray) {
+    let key = '_signatures';
+    while(obj[key]) key = '_' + key;
+    obj[key] = signatureArray;
+  }
+
+  return obj;
 }
 
 /// @dev this is a test case collection
@@ -138,18 +323,18 @@ describe('Certificate Storage Contract', () => {
     certifyingAuthorities.forEach(entry => {
       it(`Manager authorises ${entry[1]}`, async() => {
         const certifierName = entry[1];
-        const nameBytes32 = stringToBytes32(certifierName);
+        const nameBytes = bytify(certifierName);
 
         const certifierAddress = accounts[entry[0]];
 
         await parseTx(certificateStorageInstance.functions.addCertifyingAuthority(
           certifierAddress,
-          nameBytes32
+          nameBytes
         ));
 
         const certifyingAuthority = await certificateStorageInstance.functions.certifyingAuthorities(certifierAddress);
 
-        const formatedName = bytesToString(certifyingAuthority.name);
+        const formatedName = bytesToString(certifyingAuthority.data);
         // console.log({formatedName, name});
         assert.equal(formatedName, certifierName, 'name should be set properly');
         assert.equal(certifyingAuthority.isAuthorised, true, 'authorisation should be true by default');
@@ -157,77 +342,71 @@ describe('Certificate Storage Contract', () => {
     });
 
     certificateTestCases.forEach(certificateTestCase => {
-      let signedCertificate;
+      let encodedCertificateObj;
       it('new certificate signed by account 1', async() => {
-        const nameBytes32 = stringToBytes32(certificateTestCase.studentName);
-        const qualificationBytes32 = encodeQualification(
-          certificateTestCase.courseName,
-          certificateTestCase.percentile
-        );
-        const extraDataBytes32 = ethers.utils.hexZeroPad(certificateTestCase.extraData, 32);
+        encodedCertificateObj = encodeCertificateObject(certificateTestCase.certificateObj);
+        // console.log({encodedCertificateObj});
 
-        const unsignedCertificateConcat = ethers.utils.hexlify(ethers.utils.concat([
-          nameBytes32,
-          qualificationBytes32,
-          extraDataBytes32
-        ]));
+        const unsignedCertificateHash = encodedCertificateObj.certificateHash;
 
-        const unsignedCertificateHash = ethers.utils.keccak256(
-          ethers.utils.concat([ethers.utils.toUtf8Bytes('\x19Ethereum Signed Message:\n96'),unsignedCertificateConcat])
-        );
-        console.log({unsignedCertificateConcat, unsignedCertificateHash});
-
-        let signedCertificateConcat = unsignedCertificateConcat;
         const signers = [];
         for(const accId of certificateTestCase.signerAccounts) {
           const signer = provider.getSigner(accounts[accId]);
           signers.push(await signer.getAddress())
-          const signature = await signer.signMessage(ethers.utils.arrayify(unsignedCertificateConcat));
-          signedCertificateConcat = ethers.utils.concat([signedCertificateConcat, signature]);
+          // console.log(encodedCertificateObj.dataRLP);
+          const signature = await signer.signMessage(ethers.utils.arrayify(encodedCertificateObj.dataRLP));
+          encodedCertificateObj = addSignaturesToCertificateRLP(encodedCertificateObj, signature);
         }
 
-        const arg = ethers.utils.hexlify(signedCertificateConcat);
-        signedCertificate = arg;
-
         console.log({
-          nameBytes32,
-          qualificationBytes32,
-          extraDataBytes32,
-          signedCertificate,
+          encodedCertificateObj,
           signers
         });
 
-
-        // assert.equal(signedCertificate.length, SIGNED_CERTIFICATE_LENGTH, 'invalid signed certificate length');
+        // test cases:
+        const decoded = decodeCertificateData(encodedCertificateObj);
+        Object.keys(certificateTestCase.certificateObj).forEach(key => {
+          assert.equal(decoded[key], certificateTestCase.certificateObj[key], `invalid ${key} key`);
+        });
       });
 
-      it('certificate is being submitted to contract from account 2', async() => {
-        console.log({signedCertificate});
+      it(`certificate is being submitted to contract from account ${certificateTestCase.studentAccount}`, async() => {
         const _certificateStorageInstance = certificateStorageInstance.connect(provider.getSigner(accounts[certificateTestCase.studentAccount]));
 
-        await parseTx(certificateStorageInstance.functions.registerCertificate(signedCertificate));
+        await parseTx(certificateStorageInstance.functions.registerCertificate(encodedCertificateObj.fullRLP));
 
-        const unsignedCertificate = signedCertificate.slice(0,2+96*2);
-        const certificateHash = ethers.utils.keccak256(ethers.utils.concat([ethers.utils.toUtf8Bytes('\x19Ethereum Signed Message:\n96'), unsignedCertificate]));
-        console.log({certificateHash, unsignedCertificate});
+        const unsignedCertificate = encodedCertificateObj.dataRLP;
+        const certificateHash = encodedCertificateObj.certificateHash;
+        // console.log({certificateHash, unsignedCertificate});
 
         const certificate = await certificateStorageInstance.functions.certificates(certificateHash);
-        console.log(certificate);
+        // console.log(certificate);
 
-        const decodedQualification = decodeQualification(certificate.qualification);
-        console.log(decodedQualification);
+        const decodedCertificate = decodeCertificateData(certificate.data);
+        console.log({decodedCertificate});
 
         console.log({signersInContract: parsePackedAddress(certificate.signers)});
 
-        assert.equal(bytesToString(certificate.name), certificateTestCase.studentName, 'student name should match on certificate');
-        assert.equal(decodedQualification.courseName, certificateTestCase.courseName, 'course name should match on certificate');
-        assert.equal(decodedQualification.percentile, certificateTestCase.percentile, 'course name should match on certificate');
+        Object.keys(certificateTestCase.certificateObj).forEach(key => {
+          assert.equal(decodedCertificate[key], certificateTestCase.certificateObj[key], `invalid ${key} key`);
+        });
 
-        // const zemse = await certificateStorageInstance.functions.zemse();
-        // console.log({zemse});
+
         //
         // assert.ok(certifyingAuthority.isAuthorised, 'certifier should be authorised');
       });
-    })
+      // it('zemse', async() => {
+      //   // let previousGas = 0;
+      //   // for(let i = 0; i <= 128; i++) {
+      //   //   const randomBytes = ethers.utils.randomBytes(i);
+      //   //   const gas = (await certificateStorageInstance.estimate.writeToSz(randomBytes)).toNumber();
+      //   //   console.log({i, gas, diff: gas - previousGas});
+      //   //   previousGas = gas;
+      //   //   // console.log({});
+      //   // }
+      //   const zemse = await certificateStorageInstance.functions.zemse();
+      //   console.log({zemse});
+      // });
+    });
   });
 });

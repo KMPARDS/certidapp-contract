@@ -11,30 +11,36 @@ fdp bootcamp webinar participation
 
 // add option for certifiying authority to transfer certificationship to other address
 
+
+adding:
+RLP structure
+
 */
 
+import 'RLP.sol';
+
 contract CertificateStorage {
+  using RLP for bytes;
+  using RLP for RLP.RLPItem;
+
   struct Certificate {
-    bytes32 name;
-    bytes32 qualification;
-    bytes32 extraData;
+    bytes data;
     bytes signers;
   }
 
   struct CertifyingAuthority {
-    bytes32 name;
+    bytes data;
     bool isAuthorised;
+    bool isMigrated;
   }
 
   mapping(bytes32 => Certificate) public certificates;
   mapping(address => CertifyingAuthority) public certifyingAuthorities;
 
   address public manager;
-  bytes constant public PERSONAL_PREFIX = "\x19Ethereum Signed Message:\n96";
-  uint256 constant CERTIFICATE_DETAILS_LENGTH = 96;
+  bytes constant public PERSONAL_PREFIX = "\x19Ethereum Signed Message:\n";
+  // uint256 constant CERTIFICATE_DETAILS_LENGTH = 96;
   uint256 constant SIGNATURE_LENGTH = 65;
-
-  // bytes public zemse;
 
   event Certified(
     bytes32 indexed _certificateHash,
@@ -55,10 +61,15 @@ contract CertificateStorage {
     manager = msg.sender;
   }
 
-  function addCertifyingAuthority(address _authorityAddress, bytes32 _name) public onlyManager {
+  // function writeToSz(bytes memory _sz) public {
+  //   sz[msg.sender] = _sz;
+  // }
+
+  function addCertifyingAuthority(address _authorityAddress, bytes memory _name) public onlyManager {
     certifyingAuthorities[_authorityAddress] = CertifyingAuthority({
-      name: _name,
-      isAuthorised: true
+      data: _name,
+      isAuthorised: true,
+      isMigrated: false
     });
     emit Authorization(_authorityAddress, true);
   }
@@ -74,26 +85,26 @@ contract CertificateStorage {
     certifyingAuthorities[_authorityAddress].isAuthorised = _newStatus;
   }
 
-  function updateCertifyingAuthority(
-    bytes32 _name
-  ) public {
-    require(
-      certifyingAuthorities[msg.sender].isAuthorised
-      , 'not authorised'
-    );
-    certifyingAuthorities[msg.sender].name = _name;
-  }
- 
+  // function updateCertifyingAuthority(
+  //   bytes32 _name
+  // ) public {
+  //   require(
+  //     certifyingAuthorities[msg.sender].isAuthorised
+  //     , 'not authorised'
+  //   );
+  //   certifyingAuthorities[msg.sender].name = _name;
+  // }
+
   function registerCertificate(
     bytes memory _signedCertificate
   ) public returns (
     bytes32
   ) {
-    require(
-      _signedCertificate.length > CERTIFICATE_DETAILS_LENGTH
-      && (_signedCertificate.length - CERTIFICATE_DETAILS_LENGTH) % SIGNATURE_LENGTH == 0
-      , 'invalid certificate length'
-    );
+    // require(
+    //   _signedCertificate.length > CERTIFICATE_DETAILS_LENGTH
+    //   && (_signedCertificate.length - CERTIFICATE_DETAILS_LENGTH) % SIGNATURE_LENGTH == 0
+    //   , 'invalid certificate length'
+    // );
 
     (Certificate memory _certificateObj, bytes32 _certificateHash) = parseSignedCertificate(_signedCertificate, true);
 
@@ -108,10 +119,10 @@ contract CertificateStorage {
     /// @dev if certificate already registered then signers can be updated
     bytes memory _updatedSigners = certificates[_certificateHash].signers;
 
-    for(uint256 _i = 0; _i < _newSigners.length; _i += 20) {
+    for(uint256 i = 0; i < _newSigners.length; i += 20) {
       address _signer;
       assembly {
-        _signer := mload(add(_newSigners, add(0x14, _i)))
+        _signer := mload(add(_newSigners, add(0x14, i)))
       }
       if(checkUniqueSigner(_signer, certificates[_certificateHash].signers)) {
         _updatedSigners = abi.encodePacked(_updatedSigners, _signer);
@@ -139,33 +150,25 @@ contract CertificateStorage {
     Certificate memory _certificateObj,
     bytes32 _certificateHash
   ) {
-    bytes32 _name;
-    bytes32 _qualification;
-    bytes32 _extraData;
-    bytes memory _signers;
+    RLP.RLPItem[] memory _certificateRLP = _signedCertificate.toRlpItem().toList();
 
-    assembly {
-      let _pointer := add(_signedCertificate, 0x20)
-      _name := mload(_pointer)
-      _qualification := mload(add(_pointer, 0x20))
-      _extraData := mload(add(_pointer, 0x40))
-    }
+    _certificateObj.data = _certificateRLP[0].toRlpBytes();
 
-    // zemse =
     _certificateHash = keccak256(abi.encodePacked(
       PERSONAL_PREFIX,
-      _name,
-      _qualification,
-      _extraData
+      getBytesStr(_certificateObj.data.length),
+      _certificateObj.data
     ));
 
-    for(uint256 _i = CERTIFICATE_DETAILS_LENGTH; _i < _signedCertificate.length; _i += SIGNATURE_LENGTH) {
+    for(uint256 i = 1; i < _certificateRLP.length; i += 1) {
+      bytes memory _signature = _certificateRLP[i].toBytes();
+
       bytes32 _r;
       bytes32 _s;
       uint8 _v;
 
       assembly {
-        let _pointer := add(_signedCertificate, add(0x20, _i))
+        let _pointer := add(_signature, 0x20)
         _r := mload(_pointer)
         _s := mload(add(_pointer, 0x20))
         _v := byte(0, mload(add(_pointer, 0x40)))
@@ -176,19 +179,14 @@ contract CertificateStorage {
 
       address _signer = ecrecover(_certificateHash, _v, _r, _s);
 
-      require(checkUniqueSigner(_signer, _signers), 'each signer should be unique');
+      require(checkUniqueSigner(_signer, _certificateObj.signers), 'each signer should be unique');
 
       if(_allowedSignersOnly) {
         require(certifyingAuthorities[_signer].isAuthorised, 'certifier not authorised');
       }
 
-      _signers = abi.encodePacked(_signers, _signer);
+      _certificateObj.signers = abi.encodePacked(_certificateObj.signers, _signer);
     }
-
-    _certificateObj.name = _name;
-    _certificateObj.qualification = _qualification;
-    _certificateObj.extraData = _extraData;
-    _certificateObj.signers = _signers;
   }
 
   function checkUniqueSigner(address _signer, bytes memory _packedSigners) private pure returns (bool){
@@ -197,13 +195,33 @@ contract CertificateStorage {
     require(_packedSigners.length % 20 == 0, 'invalid packed signers length');
 
     address _tempSigner;
-    for(uint256 _i = 0; _i < _packedSigners.length; _i += 20) {
+    for(uint256 i = 0; i < _packedSigners.length; i += 20) {
       assembly {
-        _tempSigner := mload(add(_packedSigners, add(0x14, _i)))
+        _tempSigner := mload(add(_packedSigners, add(0x14, i)))
       }
       if(_tempSigner == _signer) return false;
     }
 
     return true;
+  }
+
+
+  function getBytesStr(uint i) private pure returns (bytes memory) {
+    if (i == 0) {
+      return "0";
+    }
+    uint j = i;
+    uint len;
+    while (j != 0) {
+      len++;
+      j /= 10;
+    }
+    bytes memory bstr = new bytes(len);
+    uint k = len - 1;
+    while (i != 0) {
+      bstr[k--] = byte(uint8(48 + i % 10));
+      i /= 10;
+    }
+    return bstr;
   }
 }

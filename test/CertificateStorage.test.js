@@ -36,7 +36,9 @@ const certificateTestCases = [
       subject: '5 Days FDP on Blockchain',
       score: 78.36,
       category: 'Completion',
-      id: 51000
+      id: 51000.223455,
+      id2: 51000,
+      id3: '51000',
     }
   },
   // {
@@ -90,7 +92,7 @@ function parsePackedAddress(packedAddresses) {
 // 0110 => date timestamp
 
 // add float data type for arbitary entries
-const dataTypes = [null, 'bytes', 'number', 'string', 'boolean', 'image', 'date'];
+const dataTypes = [null, 'bytes', 'number', 'float', 'string', 'boolean', 'image', 'date'];
 const order = ['name', 'subject', 'score', 'category'];
 
 function getDataTypeHexByte(type) {
@@ -106,6 +108,11 @@ function guessDataTypeFromInput(input) {
         return 'bytes';
       }
       return 'string';
+    case 'number':
+      if(String(input).split('.')[1]) {
+        return 'float';
+      }
+      return 'number';
     default:
       return typeof input;
   }
@@ -113,8 +120,8 @@ function guessDataTypeFromInput(input) {
 
 // remaining for image and data
 // take number or string and convert it into bytes
-function bytify(input) {
-  switch(guessDataTypeFromInput(input)) {
+function bytify(input, type) {
+  switch(type || guessDataTypeFromInput(input)) {
     case 'bytes':
       return input;
     case 'number':
@@ -123,6 +130,13 @@ function bytify(input) {
           hex = '0'+hex;
       }
       return '0x' + hex;
+    case 'float':
+      const numberOfDecimals = (String(input).split('.')[1] || '').length;
+      const decimalByte = bytify(numberOfDecimals, 'number').slice(2);
+      if(decimalByte.length !== 2) throw new Error(`Invalid decimal byte: (${decimalByte})`);
+      const numberWithoutDecimals = input * 10**numberOfDecimals;
+      const numberBytes = bytify(numberWithoutDecimals, 'number').slice(2);
+      return '0x' + decimalByte + numberBytes;
     case 'string':
       return ethers.utils.hexlify(ethers.utils.toUtf8Bytes(input));
     case 'boolean':
@@ -138,12 +152,16 @@ function renderBytes(hex, type) {
       return hex;
     case 'number':
       return +hex;
+    case 'float':
+      const decimals = +('0x'+hex.slice(2,4));
+      const number = +('0x'+hex.slice(4));
+      return number / 10**decimals;
     case 'string':
       return bytesToString(hex);
     case 'boolean':
       return !!(+hex);
     default:
-      return null;
+      return hex;
   }
 }
 
@@ -152,7 +170,8 @@ function isProperValue(input) {
 }
 
 // IMP: when encoding arbitary key value pairs, set float numbers with decimals
-function encodeCertificateObject(obj) {
+function encodeCertificateObject(obj, signature = []) {
+  let signatureArray = typeof signature === 'object' ? signature : [signature];
   const entries = Object.entries(obj);
   const certRLPArray = [];
 
@@ -188,7 +207,7 @@ function encodeCertificateObject(obj) {
     });
 
     if(certRLPArray[datatypeIndex].length % 2) {
-      certRLPArray[datatypeIndex] = '0' + certRLPArray[datatypeIndex];
+      certRLPArray[datatypeIndex] = certRLPArray[datatypeIndex] + '0';
     }
 
     certRLPArray[datatypeIndex] = '0x' + certRLPArray[datatypeIndex];
@@ -199,7 +218,7 @@ function encodeCertificateObject(obj) {
   const digest = ethers.utils.hexlify(ethers.utils.concat([ethers.utils.toUtf8Bytes('\x19Ethereum Signed Message:\n'+(dataRLP.length/2 - 1)),dataRLP]));
   // console.log({zemse});
   return {
-    fullRLP: ethers.utils.RLP.encode([certRLPArray]),
+    fullRLP: ethers.utils.RLP.encode([certRLPArray, ...signatureArray]),
     dataRLP,
     certificateHash: ethers.utils.keccak256(digest)
   };

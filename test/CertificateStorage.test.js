@@ -229,8 +229,9 @@ function encodeCertificateObject(obj, signature = []) {
 function addSignaturesToCertificateRLP(encodedFullCertificate, signature = []) {
   let signatureArray = typeof signature === 'object' ? signature : [signature];
   let certificateData;
-  if(typeof encodedCertificate === 'object') {
-    certificateData = ethers.utils.RLP.decode(encodedCertificate.dataRLP);
+  // console.log('zemse', {encodedFullCertificate, encodedCertificate});
+  if(typeof encodedFullCertificate === 'object') {
+    certificateData = ethers.utils.RLP.decode(encodedFullCertificate.dataRLP);
   } else {
     const decoded = ethers.utils.RLP.decode(encodedFullCertificate.fullRLP);
     certificateData = decoded[0];

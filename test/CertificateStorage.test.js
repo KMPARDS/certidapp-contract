@@ -331,7 +331,7 @@ describe('Certificate Storage Contract', () => {
       const proxyContractInstance =  await ProxyContractFactory.deploy();
       assert.ok(proxyContractInstance.address, 'conract address should be present');
 
-      await parseTx(proxyContractInstance.functions.upgradeTo(certificateStorageInstance.address));
+      await parseTx(proxyContractInstance.functions.upgradeTo('v1', certificateStorageInstance.address));
 
       const implementation = await proxyContractInstance.functions.implementation();
       // console.log(implementation, certificateStorageInstance.address);

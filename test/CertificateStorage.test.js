@@ -233,7 +233,7 @@ function addSignaturesToCertificateRLP(encodedFullCertificate, signature = []) {
   if(typeof encodedFullCertificate === 'object') {
     certificateData = ethers.utils.RLP.decode(encodedFullCertificate.dataRLP);
   } else {
-    const decoded = ethers.utils.RLP.decode(encodedFullCertificate.fullRLP);
+    const decoded = ethers.utils.RLP.decode(encodedFullCertificate);
     certificateData = decoded[0];
     if(decoded.length > 1) {
       signatureArray = [...decoded.slice(1), ...signatureArray];

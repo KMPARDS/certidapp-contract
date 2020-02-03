@@ -1,6 +1,6 @@
 # CertiÐApp Smart Contract
 Smart Contract based Certificate issuance and verification
-User interface repository: https://github.com/KMPARDS/boa
+User interface repository: https://github.com/KMPARDS/certidapp
 
 ### Challenges in traditional certificates
 Though we are used to our traditional way of having certificates printed on a hard copy, it has some unminded challenges.
@@ -128,3 +128,5 @@ Now we decode the dataRLP:
 ]
 ```
 Here, we get first 4 elements as previous but new custom fields are added as arrays. After first 4 elements, we have extra data following up. The 5th one contains information about the data type (like `number`, `string`, `float`) of extra datas.
+
+#### Extra Data Data Types

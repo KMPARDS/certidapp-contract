@@ -5,7 +5,7 @@
 */
 
 /// @dev importing packages required
-const { dataTypes, certOrder, authOrder, extraDataTypes, certificateContract } = require('../env');
+const { dataTypes, certOrder, authOrder, extraDataTypes } = require('../env');
 const assert = require('assert');
 const ethers = require('ethers');
 const bs58 = require('bs58');
@@ -15,7 +15,7 @@ const ganache = require('ganache-cli');
 const provider = new ethers.providers.Web3Provider(ganache.provider({ gasLimit: 8000000 }));
 
 /// @dev importing build file
-const certificateStorageJSON = require('../build/CertificateStorage_CertificateStorage.json');
+const certificateStorageJSON = require('../build/CertiDApp_CertiDApp.json');
 const proxyJSON = require('../build/Proxy_Proxy.json');
 
 /// @dev initialize global variables

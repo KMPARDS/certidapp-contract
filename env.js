@@ -1,4 +1,4 @@
-const certificateStorageJSON = require('./build/CertificateStorage_CertificateStorage.json');
+const certificateStorageJSON = require('./build/CertiDApp_CertiDApp.json');
 
 const env = {
   network: 'kovan',

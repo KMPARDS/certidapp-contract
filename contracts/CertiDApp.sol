@@ -1,34 +1,10 @@
 pragma solidity 0.6.2;
 pragma experimental ABIEncoderV2;
 
-/*
-
-- certificate hash should be unsigned certificate hash
-  and there should be a way add signer to that certificate
-  - done
-
-// test certificates for:
-  fdp
-  bootcamp
-  webinar
-  participation
-
-// add option for certifiying authority to transfer certificationship to other address
-
-
-adding:
-RLP structure - done
-
-Manager:
-- should be able to add more certifying authorities
-- should be able to suspend any certifying authorities
-
-*/
-
 import 'RLP.sol';
 import 'StorageStructure.sol';
 
-contract CertificateStorage is StorageStructure {
+contract CertiDApp is StorageStructure {
   using RLP for bytes;
   using RLP for RLP.RLPItem;
 

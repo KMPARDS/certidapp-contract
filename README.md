@@ -2,7 +2,7 @@
 Smart Contract based Certificate issuance and verification.
 
 ## Why CertiÐApp
-CertiÐApp
+CertiÐApp is aims to solve below identified challenges faced by other modes.
 
 ### Challenges in traditional certificates
 Though we are used to our traditional way of having certificates printed on a hard copy, it has some unminded challenges.

@@ -1,6 +1,8 @@
 # CertiÐApp Smart Contract
-Smart Contract based Certificate issuance and verification
-User interface repository: https://github.com/KMPARDS/certidapp
+Smart Contract based Certificate issuance and verification.
+
+## Why CertiÐApp
+CertiÐApp
 
 ### Challenges in traditional certificates
 Though we are used to our traditional way of having certificates printed on a hard copy, it has some unminded challenges.
@@ -15,12 +17,33 @@ Though still, a possible workaround for certificate authority (issuer like Micro
 
 CertiÐApp aims to solve the authenticity-related problems using Kerckhoff's Principle of Cryptography. Here, instead of having complicated and secret printing process, we use a publicly known Elliptic Curve Digital Signature Algorithm (ECDSA). Here every certifier needs to hold a secret key which they will use to generate signature for every certificate they would sign. Anyone else trying to fake someone's signature for a particular certificate would find it very difficult because odds of this happening is `1` in `1000000...(75 zeros)` tries.
 
+## How to use CertiÐApp
+You can visit the ÐApp portal at https://kmpards.github.io/certidapp and you can also explore the [GitHub repository](https://github.com/KMPARDS/certidapp) of the ÐApp's frontend.
+
+### Actors
+There are three types of actors in CertiÐApp:
+1. **Certifying Authority** who signs on certificates.
+2. **Candidates** who receives certificates.
+3. **Viewers** like HRs who receive profiles with certificates for background check.
+
+#### Certifying Authority
+A  become a verified certifying authority on CertiÐApp, you have to send your KYC details.
+
 ## CertiÐApp Certificate Object Standard
-Following properties are default in every certificate:
+
+The CertiÐApp Certificate Object Standard defines how certificate objects should be encoded into a single hex string. Since increasing number of bytes to store on Ethereum blockchain increases gas costs too, goal of this standard is to minimise the bytes required to represent same certificate information. Eventually, by observing trends in the certificates issued and with suggestions from community it is expected that this standard would be improved and more complex data types would be added as per requirement.
+
+If you see any modification that would improve the standard, have any doubt or want to discuss anything related to CertiÐApp, you can start by [creating an issue](https://github.com/KMPARDS/certificate-contract/issues/new) on this repository.
+
+The `v0.1` of CertiÐApp Certificate Object Standard is implemented in `functions.js` file in root directory of this project.
+
+According to the standard, the following properties are present in every certificate by default:
 - `name` (Name of the candidate)
 - `subject` (Main Subject for the Certificate, e.g. Blockchain Internship)
 - `score` (Candidate Score if any, e.g. 79.32)
 - `category` (Certificate Category e.g. Merit, Attendance)
+
+> To try out the below functions, you can visit [CertiÐApp](https://kmpards.github.io/certidapp) portal, open JavaScript console and try below scripts.
 
 An example of a certificate object:
 ```

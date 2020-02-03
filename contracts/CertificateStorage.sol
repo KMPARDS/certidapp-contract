@@ -1,19 +1,27 @@
-pragma solidity 0.6.1;
+pragma solidity 0.6.2;
 pragma experimental ABIEncoderV2;
 
 /*
 
 - certificate hash should be unsigned certificate hash
   and there should be a way add signer to that certificate
+  - done
 
-// -
-fdp bootcamp webinar participation
+// test certificates for:
+  fdp
+  bootcamp
+  webinar
+  participation
 
 // add option for certifiying authority to transfer certificationship to other address
 
 
 adding:
-RLP structure
+RLP structure - done
+
+Manager:
+- should be able to add more certifying authorities
+- should be able to suspend any certifying authorities
 
 */
 
@@ -25,65 +33,53 @@ contract CertificateStorage is StorageStructure {
   using RLP for RLP.RLPItem;
 
   constructor() public {
-    manager = msg.sender;
+    _changeManager(msg.sender);
   }
 
-  // function writeToSz(bytes memory _sz) public {
-  //   sz[msg.sender] = _sz;
-  // }
-
-  function addCertifyingAuthority(address _authorityAddress, bytes memory _name) public onlyManager {
-    certifyingAuthorities[_authorityAddress] = CertifyingAuthority({
-      data: _name,
-      isAuthorised: true,
-      isMigrated: false
-    });
-    emit Authorization(_authorityAddress, true);
+  function changeManager(address _newManagerAddress) public onlyManager {
+    _changeManager(_newManagerAddress);
   }
 
-  function newManager(address _newManagerAddress) public onlyManager {
-    manager = _newManagerAddress;
-  }
-
-  function updateCertifyingAuthorityAuthorization(
+  function updateCertifyingAuthority(
     address _authorityAddress,
-    bool _newStatus
+    bytes memory _data,
+    AuthorityStatus _status
   ) public onlyManager {
-    certifyingAuthorities[_authorityAddress].isAuthorised = _newStatus;
+    if(_data.length > 0) {
+      certifyingAuthorities[_authorityAddress].data = _data;
+    }
+
+    certifyingAuthorities[_authorityAddress].status = _status;
+
+    emit AuthorityStatusUpdated(_authorityAddress, _status);
   }
 
-  // function updateCertifyingAuthority(
-  //   bytes32 _name
-  // ) public {
-  //   require(
-  //     certifyingAuthorities[msg.sender].isAuthorised
-  //     , 'not authorised'
-  //   );
-  //   certifyingAuthorities[msg.sender].name = _name;
-  // }
+  function migrateCertifyingAuthority(address _newAuthorityAddress) public onlyAuthorisedCertifier {
+    certifyingAuthorities[msg.sender].status = AuthorityStatus.Migrated;
+    emit AuthorityStatusUpdated(msg.sender, AuthorityStatus.Migrated);
+
+    certifyingAuthorities[_newAuthorityAddress] = CertifyingAuthority({
+      data: certifyingAuthorities[msg.sender].data,
+      status: AuthorityStatus.Authorised
+    });
+    emit AuthorityStatusUpdated(_newAuthorityAddress, AuthorityStatus.Authorised);
+
+    emit AuthorityMigrated(msg.sender, _newAuthorityAddress);
+  }
 
   function registerCertificate(
     bytes memory _signedCertificate
   ) public returns (
     bytes32
   ) {
-    // require(
-    //   _signedCertificate.length > CERTIFICATE_DETAILS_LENGTH
-    //   && (_signedCertificate.length - CERTIFICATE_DETAILS_LENGTH) % SIGNATURE_LENGTH == 0
-    //   , 'invalid certificate length'
-    // );
-
     (Certificate memory _certificateObj, bytes32 _certificateHash) = parseSignedCertificate(_signedCertificate, true);
-
-    // require(
-    //   certificates[_certificateHash].signers.length == 0
-    //   , 'certificate registered already'
-    // );
 
     /// @dev signers in this transaction
     bytes memory _newSigners = _certificateObj.signers;
 
-    /// @dev if certificate already registered then signers can be updated
+    /// @dev if certificate already registered then signers can be updated.
+    ///   Initializing _updatedSigners with existing signers on blockchain if any.
+    ///   More signers would be appended to this in next 'for' loop.
     bytes memory _updatedSigners = certificates[_certificateHash].signers;
 
     for(uint256 i = 0; i < _newSigners.length; i += 20) {
@@ -91,7 +87,7 @@ contract CertificateStorage is StorageStructure {
       assembly {
         _signer := mload(add(_newSigners, add(0x14, i)))
       }
-      if(checkUniqueSigner(_signer, certificates[_certificateHash].signers)) {
+      if(_checkUniqueSigner(_signer, certificates[_certificateHash].signers)) {
         _updatedSigners = abi.encodePacked(_updatedSigners, _signer);
         emit Certified(
           _certificateHash,
@@ -123,7 +119,7 @@ contract CertificateStorage is StorageStructure {
 
     _certificateHash = keccak256(abi.encodePacked(
       PERSONAL_PREFIX,
-      getBytesStr(_certificateObj.data.length),
+      _getBytesStr(_certificateObj.data.length),
       _certificateObj.data
     ));
 
@@ -146,17 +142,22 @@ contract CertificateStorage is StorageStructure {
 
       address _signer = ecrecover(_certificateHash, _v, _r, _s);
 
-      require(checkUniqueSigner(_signer, _certificateObj.signers), 'each signer should be unique');
+      require(_checkUniqueSigner(_signer, _certificateObj.signers), 'each signer should be unique');
 
       if(_allowedSignersOnly) {
-        require(certifyingAuthorities[_signer].isAuthorised, 'certifier not authorised');
+        require(certifyingAuthorities[_signer].status == AuthorityStatus.Authorised, 'certifier not authorised');
       }
 
       _certificateObj.signers = abi.encodePacked(_certificateObj.signers, _signer);
     }
   }
 
-  function checkUniqueSigner(address _signer, bytes memory _packedSigners) private pure returns (bool){
+  function _changeManager(address _newManagerAddress) private {
+    manager = _newManagerAddress;
+    emit ManagerUpdated(_newManagerAddress);
+  }
+
+  function _checkUniqueSigner(address _signer, bytes memory _packedSigners) private pure returns (bool){
     if(_packedSigners.length == 0) return true;
 
     require(_packedSigners.length % 20 == 0, 'invalid packed signers length');
@@ -173,7 +174,7 @@ contract CertificateStorage is StorageStructure {
   }
 
 
-  function getBytesStr(uint i) private pure returns (bytes memory) {
+  function _getBytesStr(uint i) private pure returns (bytes memory) {
     if (i == 0) {
       return "0";
     }

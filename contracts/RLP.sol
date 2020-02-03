@@ -1,7 +1,7 @@
 /**
  * Credits: https://github.com/hamdiallam/Solidity-RLP/blob/master/contracts/RLPReader.sol
  */
-pragma solidity ^0.6.1;
+pragma solidity ^0.6.2;
 
 library RLP {
   uint8 constant STRING_SHORT_START = 0x80;

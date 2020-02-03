@@ -5,8 +5,10 @@
 */
 
 /// @dev importing packages required
+const { dataTypes, certOrder, authOrder, extraDataTypes, certificateContract } = require('../env');
 const assert = require('assert');
 const ethers = require('ethers');
+const bs58 = require('bs58');
 const ganache = require('ganache-cli');
 
 /// @dev initialising development blockchain
@@ -22,10 +24,39 @@ let accounts, certificateStorageInstance;
 const SIGNED_CERTIFICATE_LENGTH = (96 + 65) * 2 + 2;
 
 const certifyingAuthorities = [
-  [1, 'Blocklogy'],
-  [2, 'Microsoft'],
-  [3, 'Google'],
-  [4, 'Apple']
+  {
+    account: 1,
+    obj: {
+      name: 'Blocklogy',
+      website: 'blocklogy.org',
+      image: 'Qm'
+    }
+  },
+  {
+    account: 2,
+    obj: {
+      name: 'Microsoft',
+    }
+  },
+  // {
+  //   account: 2,
+  //   status: 3,
+  //   obj: {
+  //     name: 'Microsoft',
+  //   }
+  // },
+  {
+    account: 3,
+    obj: {
+      name: 'Google',
+    }
+  },
+  {
+    account: 4,
+    obj: {
+      name: 'Apple',
+    }
+  }
 ];
 
 const certificateTestCases = [
@@ -84,20 +115,6 @@ function parsePackedAddress(packedAddresses) {
   return addressArray;
 }
 
-// default parameters {name, subject, score} = obj
-// extra parameters can be added which can have data types:
-// 0 is not considered because it is used for padding
-// 0001 => bytes
-// 0010 => number
-// 0011 => string
-// 0100 => boolean
-// 0101 => image
-// 0110 => date timestamp
-
-// add float data type for arbitary entries
-const dataTypes = [null, 'bytes', 'number', 'float', 'string', 'boolean', 'image', 'date'];
-const order = ['name', 'subject', 'score', 'category'];
-
 function getDataTypeHexByte(type) {
   const index = dataTypes.indexOf(type);
   if(index === -1) throw new Error('Invalid certificate data type: ' + type);
@@ -128,7 +145,7 @@ function bytify(input, type) {
     case 'bytes':
       return input;
     case 'number':
-      hex = Number(input).toString(16);
+      let hex = Number(input).toString(16);
       if(hex.length % 2 !== 0) {
           hex = '0'+hex;
       }
@@ -137,13 +154,37 @@ function bytify(input, type) {
       const numberOfDecimals = (String(input).split('.')[1] || '').length;
       const decimalByte = bytify(numberOfDecimals, 'number').slice(2);
       if(decimalByte.length !== 2) throw new Error(`Invalid decimal byte: (${decimalByte})`);
-      const numberWithoutDecimals = input * 10**numberOfDecimals;
+      const numberWithoutDecimals = Math.round(input * 10**numberOfDecimals);
       const numberBytes = bytify(numberWithoutDecimals, 'number').slice(2);
       return '0x' + decimalByte + numberBytes;
     case 'string':
       return ethers.utils.hexlify(ethers.utils.toUtf8Bytes(input));
     case 'boolean':
       return input ? '0x01' : '0x00';
+    case 'base58':
+      return '0x'+bs58.decode(input).toString('hex');
+    case 'date':
+      if(typeof input === 'string') {
+        input = input.split('/').join('');
+        if(isNaN(Number(input))) throw new Error(`Invalid Date Content (${input})`);
+        if(String(input).length !== 8) throw new Error(`Date should have 8 digits (${input}) (length: ${String(input).length})`);
+        if(String(input).split('.').length > 1) throw new Error(`Date should have no decimal point (${input})`);
+        return bytify(input, 'number');
+      } else if(typeof input === 'object' && input instanceof Date && !isNaN(input)) {
+        let dateStr = String(input.getDate());
+        if(dateStr.length < 2) dateStr = '0'+dateStr;
+        let monthStr = String(input.getMonth()+1);
+        if(monthStr.length < 2) monthStr = '0'+monthStr;
+        let yearStr = String(input.getFullYear());
+        return bytify(`${dateStr}/${monthStr}/${yearStr}`, 'date');
+      } else {
+        throw new Error('Invalid Date Type ' + typeof input);
+      }
+    case 'datetime':
+      if(typeof input === 'string') {
+        input = (new Date(input)).getTime();
+      }
+      return bytify(input, 'number');
     default:
       return null;
   }
@@ -165,6 +206,15 @@ function renderBytes(hex, type) {
       return bytesToString(hex);
     case 'boolean':
       return !!(+hex);
+    case 'base58':
+      if(hex.slice(0,2) === '0x') hex = hex.slice(2);
+      return bs58.encode(Buffer.from(hex, 'hex'));
+    case 'date':
+      let date = String(renderBytes(hex, 'number'));
+      if(date.length < 8) date = '0' + date;
+      return date.slice(0,2)+'/'+date.slice(2,4)+'/'+date.slice(4,8);
+    case 'datetime':
+      return (new Date(renderBytes(hex, 'number'))).toLocaleString();
     default:
       return hex;
   }
@@ -172,6 +222,11 @@ function renderBytes(hex, type) {
 
 function isProperValue(input) {
   return ![undefined, null, NaN].includes(input);
+}
+
+function isFullRLP(certificateHex) {
+  const decoded = ethers.utils.RLP.decode(certificateHex);
+  return typeof decoded[0] !== 'string';
 }
 
 function getCertificateHashFromDataRLP(certificateDataRLP) {
@@ -185,7 +240,7 @@ function encodeCertificateObject(obj, signature = []) {
   const certRLPArray = [];
 
   // adding name and subject into rlpArray
-  order.forEach(property => {
+  certOrder.forEach(property => {
     if(property === 'score') {
       // adding score into rlpArray
       if(isProperValue(obj['score'])) {
@@ -199,15 +254,17 @@ function encodeCertificateObject(obj, signature = []) {
     }
   });
 
-  const extraData = entries.filter(property => !order.includes(property[0]) && isProperValue(property[1]));
+  const extraData = entries.filter(property => !certOrder.includes(property[0]) && isProperValue(property[1]));
 
   if(extraData.length) {
     // pushing datatype storage of the extra datas
     certRLPArray.push('');
     const datatypeIndex = certRLPArray.length - 1;
     extraData.forEach(property => {
-      certRLPArray[datatypeIndex] = certRLPArray[datatypeIndex] + getDataTypeHexByte(guessDataTypeFromInput(property[1]));
-      certRLPArray.push([bytify(property[0]), bytify(property[1])]);
+      const dataType = extraDataTypes[property[0]] || guessDataTypeFromInput(property[1]);
+      certRLPArray[datatypeIndex] = certRLPArray[datatypeIndex]
+        + getDataTypeHexByte(dataType);
+      certRLPArray.push([bytify(property[0]), bytify(property[1], dataType)]);
     });
 
     if(certRLPArray[datatypeIndex].length % 2) {
@@ -217,7 +274,7 @@ function encodeCertificateObject(obj, signature = []) {
     certRLPArray[datatypeIndex] = '0x' + certRLPArray[datatypeIndex];
   }
 
-  console.log(certRLPArray);
+  // console.log(certRLPArray);
   const dataRLP = ethers.utils.RLP.encode(certRLPArray);
   return {
     fullRLP: ethers.utils.RLP.encode([certRLPArray, ...signatureArray]),
@@ -229,12 +286,16 @@ function encodeCertificateObject(obj, signature = []) {
 function addSignaturesToCertificateRLP(encodedFullCertificate, signature = []) {
   let signatureArray = typeof signature === 'object' ? signature : [signature];
   let certificateData;
-  // console.log('zemse', {encodedFullCertificate, encodedCertificate});
+  // console.log('in addsig',{encodedFullCertificate, signature});
   if(typeof encodedFullCertificate === 'object') {
-    certificateData = ethers.utils.RLP.decode(encodedFullCertificate.dataRLP);
+    if(encodedFullCertificate.dataRLP) {
+      certificateData = ethers.utils.RLP.decode(encodedFullCertificate.dataRLP);
+    } else {
+      certificateData = ethers.utils.RLP.decode(encodedFullCertificate.fullRLP)[0];
+    }
   } else {
     const decoded = ethers.utils.RLP.decode(encodedFullCertificate);
-    certificateData = decoded[0];
+    certificateData = isFullRLP(encodedFullCertificate) ? decoded[0] : decoded;
     if(decoded.length > 1) {
       signatureArray = [...decoded.slice(1), ...signatureArray];
     }
@@ -252,7 +313,7 @@ function addSignaturesToCertificateRLP(encodedFullCertificate, signature = []) {
 function decodeCertificateData(encodedCertificate) {
   let fullRLP = typeof encodedCertificate === 'object' ? encodedCertificate.fullRLP : encodedCertificate;
   const decoded = ethers.utils.RLP.decode(fullRLP);
-  const obj = {};
+  const parsedCertificate = {};
 
   let decodedCertificatePart, signatureArray;
   //checking if decoded is of fullRLP or certificate data part
@@ -264,27 +325,138 @@ function decodeCertificateData(encodedCertificate) {
   }
 
   decodedCertificatePart.forEach((entry, i) => {
-    if(i < order.length) {
-      if(order[i] !== 'score') {
-        obj[order[i]] = ethers.utils.toUtf8String(entry);
+    if(i < certOrder.length) {
+      if(certOrder[i] !== 'score') {
+        parsedCertificate[certOrder[i]] = ethers.utils.toUtf8String(entry);
       } else {
-        obj[order[i]] = renderBytes(entry, 'float');
+        parsedCertificate[certOrder[i]] = renderBytes(entry, 'float');
       }
-    } else if(i > order.length){
-      const type = dataTypes[+('0x'+decodedCertificatePart[order.length].slice(1+i-order.length, 2+i-order.length))];
+    } else if(i > certOrder.length){
+      const type = dataTypes[+('0x'+decodedCertificatePart[certOrder.length].slice(1+i-certOrder.length, 2+i-certOrder.length))];
+      // console.log({value: entry[1], type});
+      parsedCertificate[bytesToString(entry[0])] = renderBytes(entry[1], type);
+    }
+  });
+
+  const returnObj = { parsedCertificate };
+
+  returnObj.certificateHash = getCertificateHashFromDataRLP(ethers.utils.RLP.encode(decodedCertificatePart));
+
+  if(signatureArray) {
+    returnObj.signatures = signatureArray;
+  }
+
+  return returnObj;
+}
+
+function encodeCertifyingAuthority(obj) {
+  const entries = Object.entries(obj);
+  const rlpArray = [];
+
+  authOrder.forEach(property => {
+    const hex = isProperValue(obj[property]) ? bytify(obj[property]) : '0x';
+    rlpArray.push(hex);
+  });
+
+  const extraData = entries.filter(property => !authOrder.includes(property[0]) && isProperValue(property[1]));
+
+  if(extraData.length) {
+    // pushing datatype storage of the extra datas
+    rlpArray.push('');
+    const datatypeIndex = rlpArray.length - 1;
+    extraData.forEach(property => {
+      const dataType = extraDataTypes[property[0]] || guessDataTypeFromInput(property[1]);
+      rlpArray[datatypeIndex] = rlpArray[datatypeIndex]
+        + getDataTypeHexByte(dataType);
+      rlpArray.push([bytify(property[0]), bytify(property[1], dataType)]);
+    });
+
+    if(rlpArray[datatypeIndex].length % 2) {
+      rlpArray[datatypeIndex] = rlpArray[datatypeIndex] + '0';
+    }
+
+    rlpArray[datatypeIndex] = '0x' + rlpArray[datatypeIndex];
+  }
+
+  // console.log(rlpArray);
+  return ethers.utils.RLP.encode(rlpArray);
+}
+
+function decodeCertifyingAuthority(encodedAuthorityData) {
+  const obj = {};
+  const decoded = ethers.utils.RLP.decode(encodedAuthorityData);
+  decoded.forEach((entry, i) => {
+    if(i < authOrder.length) {
+      obj[authOrder[i]] = ethers.utils.toUtf8String(entry);
+    } else if(i > authOrder.length){
+      const type = dataTypes[+('0x'+decoded[authOrder.length].slice(1+i-authOrder.length, 2+i-authOrder.length))];
       // console.log({value: entry[1], type});
       obj[bytesToString(entry[0])] = renderBytes(entry[1], type);
     }
   });
-
-  if(signatureArray) {
-    let key = '_signatures';
-    while(obj[key]) key = '_' + key;
-    obj[key] = signatureArray;
-  }
-
   return obj;
 }
+
+async function getCertificateObjFromCertificateHash(certificateHash) {
+  const logs = await window.provider.getLogs({
+    address: certificateContract.address,
+    fromBlock: 0,
+    toBlock: 'latest',
+    topics: [ethers.utils.id('Certified(bytes32,address)'), certificateHash]
+  });
+
+  if(!logs.length) this.setState({ displayText: 'Certificate not yet registered or it does not exist' });
+
+  let certificateObj, txHashArray = [];
+
+  for(const log of logs) {
+    const txHash = log.transactionHash;
+    const transaction = await window.provider.getTransaction(txHash);
+    const arg = window.certificateContractInstance.interface.decodeFunctionData('registerCertificate(bytes)',transaction.data)[0];
+
+    const decoded = decodeCertificateData(arg);
+    // console.log({decoded, arg})
+
+    if(!certificateObj) {
+      certificateObj = {
+        fullRLP: arg,
+        ...decoded
+      };
+    } else {
+      // console.log('in else', {certificateObj, certObjExpand: addSignaturesToCertificateRLP(
+      //   certificateObj,
+      //   decoded.signatures
+      // )});
+      certificateObj = {
+        ...certificateObj,
+        ...addSignaturesToCertificateRLP(
+          certificateObj,
+          decoded.signatures
+        ),
+        signatures: decoded.signatures
+      };
+    }
+
+    // console.log({certificateObj});
+    txHashArray.push(txHash);
+  }
+
+  certificateObj.txHashArray = txHashArray;
+
+  return certificateObj;
+}
+
+function toTitleCase(str) {
+  return str.split(' ').map(str1 => str1.slice(0,1).toUpperCase()+str1.slice(1)).join(' ');
+}
+
+function toWebsiteURL(website) {
+  if(website.slice(0,4) !== 'http') {
+    website = 'http://' + website;
+  }
+  return website;
+}
+
 
 /// @dev this is a test case collection
 describe('Ganache Setup', async() => {
@@ -348,23 +520,26 @@ describe('Certificate Storage Contract', () => {
 
   describe('Certificate Storage Functionality', async() => {
     certifyingAuthorities.forEach(entry => {
-      it(`Manager authorises ${entry[1]}`, async() => {
-        const certifierName = entry[1];
-        const nameBytes = bytify(certifierName);
+      it(`Manager authorises ${entry.obj.name} (Account: ${entry.account})`, async() => {
+        const encoded = encodeCertifyingAuthority(entry.obj);
 
-        const certifierAddress = accounts[entry[0]];
+        const certifierAddress = accounts[entry.account];
 
-        await parseTx(certificateStorageInstance.functions.addCertifyingAuthority(
+        await parseTx(certificateStorageInstance.functions.updateCertifyingAuthority(
           certifierAddress,
-          nameBytes
+          encoded,
+          entry.status || 1
         ));
 
         const certifyingAuthority = await certificateStorageInstance.functions.certifyingAuthorities(certifierAddress);
+        // console.log({certifyingAuthority});
 
-        const formatedName = bytesToString(certifyingAuthority.data);
-        // console.log({formatedName, name});
-        assert.equal(formatedName, certifierName, 'name should be set properly');
-        assert.equal(certifyingAuthority.isAuthorised, true, 'authorisation should be true by default');
+        const parsedAuthority = decodeCertifyingAuthority(certifyingAuthority.data);
+
+        for(const key in entry.obj) {
+          assert.equal(entry.obj[key], parsedAuthority[key], 'name should be set properly');
+        }
+        assert.equal(certifyingAuthority.status, 1, 'authorisation should be 1 (Authorised) by default');
       });
     });
 
@@ -391,7 +566,7 @@ describe('Certificate Storage Contract', () => {
         });
 
         // test cases:
-        const decoded = decodeCertificateData(encodedCertificateObj);
+        const decoded = decodeCertificateData(encodedCertificateObj).parsedCertificate;
         Object.keys(certificateTestCase.certificateObj).forEach(key => {
           assert.equal(decoded[key], certificateTestCase.certificateObj[key], `invalid ${key} key`);
         });
@@ -409,7 +584,7 @@ describe('Certificate Storage Contract', () => {
         const certificate = await certificateStorageInstance.functions.certificates(certificateHash);
         // console.log(certificate);
 
-        const decodedCertificate = decodeCertificateData(certificate.data);
+        const decodedCertificate = decodeCertificateData(certificate.data).parsedCertificate;
         console.log({decodedCertificate});
 
         console.log({signersInContract: parsePackedAddress(certificate.signers)});

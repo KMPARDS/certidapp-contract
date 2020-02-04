@@ -15,19 +15,31 @@ Though still, a possible workaround for certificate authority (issuer like Micro
 
 ### CertiÐApp as a solution to above problems
 
-CertiÐApp aims to solve the authenticity-related problems using Kerckhoff's Principle of Cryptography. Here, instead of having complicated and secret printing process, we use a publicly known Elliptic Curve Digital Signature Algorithm (ECDSA). Here every certifier needs to hold a secret key which they will use to generate signature for every certificate they would sign. Anyone else trying to fake someone's signature for a particular certificate would find it very difficult because odds of this happening is `1` in `1000000...(75 zeros)` tries.
+CertiÐApp aims to solve the authenticity-related problems using Kerckhoff's Principle of Cryptography. Here, instead of having complicated and secret printing process, we use a publicly known Elliptic Curve Digital Signature Algorithm (ECDSA). Here every certifier needs to hold a secret key which they will use to generate signature for every certificate they would sign.
+
+#### How much secure is it?
+
+Anyone else trying to fake someone's signature for a particular certificate would find it very difficult because odds of this happening is `1` in `1000000...(154 zeros)` tries. An usual laptop is estimated to take around 10<sup>143</sup> years to forge a fake signature for a particular certificate. If we assume combination of every computer in the world to fake a signature, it would take around 10<sup>130</sup> years. For instance, age of Earth is approximately 10<sup>10</sup>. Hence it is not feasible to forge a certificate signature.
+
+While with traditional certificates, reverse engineering a complex printing setup to create fake but almost real looking certificates is quick like at most a week or a month for an printing expert. It's pretty easy to conclude our traditional way is broken and CertiÐApp solves these problems.
 
 ## How to use CertiÐApp
 You can visit the ÐApp portal at https://kmpards.github.io/certidapp and you can also explore the [GitHub repository](https://github.com/KMPARDS/certidapp) of the ÐApp's frontend.
 
+### Flow of Certificate Issuance
+1. A certificate is drafted and sent to Certifying Authority for signing. It can also be that Certifying Authority themselves drafted the certificate. This step can be done by anyone.
+2. A Certifying Authority signs on it using their secret key and a signature is generated. This step can only be done by the Certifying Authority since only they hold their secret key.
+3. The certificate details and the signature is joined in a special way and a hex string is generated, it is sent to the candidate via email.
+4. Candidate registers the certificate.
+
 ### Actors
 There are three types of actors in CertiÐApp:
 1. **Certifying Authority** who signs on certificates.
-2. **Candidates** who receives certificates.
-3. **Viewers** like HRs who receive profiles with certificates for background check.
+2. **Candidates** who receives certificates and submits to smart contract for verification.
+3. **Viewers** people like HRs who receive profiles with certificates for background check.
 
 #### Certifying Authority
-A  become a verified certifying authority on CertiÐApp, you have to send your KYC details.
+To prevent abuse of the system, any organisation or professional who wants to provide certificates on CertiÐApp become a verified certifying authority on CertiÐApp, you have to send your KYC details.
 
 ## CertiÐApp Certificate Object Standard
 
@@ -152,4 +164,17 @@ Now we decode the dataRLP:
 ```
 Here, we get first 4 elements as previous but new custom fields are added as arrays. After first 4 elements, we have extra data following up. The 5th one contains information about the data type (like `number`, `string`, `float`) of extra datas.
 
-#### Extra Data Data Types
+#### Data Types
+
+At the moment, following data types are included in the standard.
+- `null`
+- `bytes`
+- `number`
+- `float`
+- `string`
+- `boolean`
+- `base58`
+- `date`
+- `datetime`
+
+These data types are implemented in the `_z.bytify(input: any, datatype: string)` for encoding into hexstrings and `_z.renderBytes(hex: string, datatype: string)` for decoding back.
